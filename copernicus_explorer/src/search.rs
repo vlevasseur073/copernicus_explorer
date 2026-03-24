@@ -358,7 +358,10 @@ mod tests {
     fn build_filter_valid_product_s1() {
         for p in &["GRD", "SLC", "OCN", "RAW"] {
             let query = SearchQuery::new(Satellite::Sentinel1).product(*p);
-            assert!(query.build_filter().is_ok(), "expected {p} to be valid for S1");
+            assert!(
+                query.build_filter().is_ok(),
+                "expected {p} to be valid for S1"
+            );
         }
     }
 
@@ -373,8 +376,14 @@ mod tests {
     fn build_filter_tile_strips_t_prefix() {
         let query = SearchQuery::new(Satellite::Sentinel2).tile("T31TFJ");
         let filter = query.build_filter().unwrap();
-        assert!(filter.contains("Value eq '31TFJ'"), "should strip the T prefix: {filter}");
-        assert!(!filter.contains("Value eq 'T31TFJ'"), "should not keep the T prefix");
+        assert!(
+            filter.contains("Value eq '31TFJ'"),
+            "should strip the T prefix: {filter}"
+        );
+        assert!(
+            !filter.contains("Value eq 'T31TFJ'"),
+            "should not keep the T prefix"
+        );
     }
 
     #[test]

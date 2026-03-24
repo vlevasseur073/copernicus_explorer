@@ -61,35 +61,42 @@ impl Satellite {
     /// "MSIL2A", so we list "L2A" which matches via `contains`).
     pub fn known_products(&self) -> &'static [&'static str] {
         match self {
-            Satellite::Sentinel1 => &[
-                "GRD", "GRDH", "GRDM", "SLC", "OCN", "RAW",
-            ],
-            Satellite::Sentinel2 => &[
-                "L1C", "L2A",
-            ],
+            Satellite::Sentinel1 => &["GRD", "GRDH", "GRDM", "SLC", "OCN", "RAW"],
+            Satellite::Sentinel2 => &["L1C", "L2A"],
             Satellite::Sentinel3 => &[
                 // OLCI
-                "OL_1_EFR", "OL_1_ERR", "OL_2_LFR", "OL_2_LRR",
-                "OL_2_WFR", "OL_2_WRR",
+                "OL_1_EFR", "OL_1_ERR", "OL_2_LFR", "OL_2_LRR", "OL_2_WFR", "OL_2_WRR",
                 // SLSTR
-                "SL_1_RBT", "SL_2_LST", "SL_2_WST", "SL_2_FRP", "SL_2_AOD",
-                // SRAL
-                "SR_1_SRA", "SR_2_LAN", "SR_2_WAT",
-                // Synergy
+                "SL_1_RBT", "SL_2_LST", "SL_2_WST", "SL_2_FRP", "SL_2_AOD", // SRAL
+                "SR_1_SRA", "SR_2_LAN", "SR_2_WAT", // Synergy
                 "SY_2_SYN", "SY_2_V10", "SY_2_VG1", "SY_2_VGP",
             ],
             Satellite::Sentinel5P => &[
-                "L1B_IR_SIR", "L1B_IR_UVN", "L1B_RA_BD1", "L1B_RA_BD2",
-                "L1B_RA_BD3", "L1B_RA_BD4", "L1B_RA_BD5", "L1B_RA_BD6",
-                "L1B_RA_BD7", "L1B_RA_BD8",
-                "L2__AER_AI", "L2__AER_LH", "L2__CH4___", "L2__CLOUD_",
-                "L2__CO____", "L2__HCHO__", "L2__NO2___", "L2__NP_BD3",
-                "L2__NP_BD6", "L2__NP_BD7", "L2__O3____", "L2__O3_TCL",
+                "L1B_IR_SIR",
+                "L1B_IR_UVN",
+                "L1B_RA_BD1",
+                "L1B_RA_BD2",
+                "L1B_RA_BD3",
+                "L1B_RA_BD4",
+                "L1B_RA_BD5",
+                "L1B_RA_BD6",
+                "L1B_RA_BD7",
+                "L1B_RA_BD8",
+                "L2__AER_AI",
+                "L2__AER_LH",
+                "L2__CH4___",
+                "L2__CLOUD_",
+                "L2__CO____",
+                "L2__HCHO__",
+                "L2__NO2___",
+                "L2__NP_BD3",
+                "L2__NP_BD6",
+                "L2__NP_BD7",
+                "L2__O3____",
+                "L2__O3_TCL",
                 "L2__SO2___",
             ],
-            Satellite::Sentinel6 => &[
-                "MW_2__AMR", "P4_1B_LR", "P4_2__LR",
-            ],
+            Satellite::Sentinel6 => &["MW_2__AMR", "P4_1B_LR", "P4_2__LR"],
         }
     }
 
@@ -134,7 +141,10 @@ pub struct Product {
     #[serde(rename = "Id")]
     pub id: String,
 
-    #[serde(rename = "ContentDate", deserialize_with = "deserialize_acquisition_date")]
+    #[serde(
+        rename = "ContentDate",
+        deserialize_with = "deserialize_acquisition_date"
+    )]
     pub acquisition_date: String,
 
     #[serde(rename = "PublicationDate")]
@@ -194,11 +204,10 @@ pub fn format_products(products: &[Product]) -> String {
 
     writeln!(
         buf,
-        "{id:<40} {cloud:>6}  {date:<28} {name}",
+        "{id:<40} {cloud:>6}  {date:<28} NAME",
         id = "ID",
         cloud = "CLOUD",
         date = "ACQUISITION DATE",
-        name = "NAME",
     )
     .unwrap();
     writeln!(buf, "{}", "-".repeat(130)).unwrap();
@@ -251,7 +260,10 @@ pub(crate) struct RawProduct {
     #[serde(rename = "Id")]
     pub id: String,
 
-    #[serde(rename = "ContentDate", deserialize_with = "deserialize_acquisition_date")]
+    #[serde(
+        rename = "ContentDate",
+        deserialize_with = "deserialize_acquisition_date"
+    )]
     pub acquisition_date: String,
 
     #[serde(rename = "PublicationDate")]
@@ -281,7 +293,10 @@ impl RawProduct {
             .iter()
             .find(|a| a.name == "cloudCover")
             .and_then(|a| a.value.as_ref())
-            .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
+            .and_then(|v| {
+                v.as_f64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            });
 
         Product {
             name: self.name,

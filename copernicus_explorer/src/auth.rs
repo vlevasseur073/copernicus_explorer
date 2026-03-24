@@ -62,14 +62,10 @@ pub fn get_access_token(username: &str, password: &str) -> Result<String> {
 /// error into our `CopernicusError::AuthenticationFailed` using `map_err`.
 pub fn get_access_token_from_env() -> Result<String> {
     let username = std::env::var("COPERNICUS_USER").map_err(|_| {
-        CopernicusError::AuthenticationFailed(
-            "COPERNICUS_USER environment variable not set".into(),
-        )
+        CopernicusError::AuthenticationFailed("COPERNICUS_USER environment variable not set".into())
     })?;
     let password = std::env::var("COPERNICUS_PASS").map_err(|_| {
-        CopernicusError::AuthenticationFailed(
-            "COPERNICUS_PASS environment variable not set".into(),
-        )
+        CopernicusError::AuthenticationFailed("COPERNICUS_PASS environment variable not set".into())
     })?;
 
     get_access_token(&username, &password)

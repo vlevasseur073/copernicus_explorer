@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
@@ -144,6 +144,7 @@ fn main() {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_search(
     satellite: Satellite,
     product: Option<String>,
@@ -190,7 +191,7 @@ fn run_search(
 
 fn run_download(
     scene: &str,
-    output_dir: &PathBuf,
+    output_dir: &Path,
     user: Option<&str>,
     pass: Option<&str>,
 ) -> Result<(), copernicus_explorer::CopernicusError> {
@@ -247,11 +248,7 @@ fn parse_date_range(
 
 fn parse_date(s: &str) -> Result<DateTime<Utc>, copernicus_explorer::CopernicusError> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d")
-        .map(|d| {
-            d.and_hms_opt(0, 0, 0)
-                .unwrap()
-                .and_utc()
-        })
+        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
         .map_err(|e| {
             copernicus_explorer::CopernicusError::InvalidArgument(format!(
                 "invalid date '{s}' (expected YYYY-MM-DD): {e}"
@@ -276,7 +273,10 @@ fn parse_geometry(
             })?;
         if parts.len() != 2 {
             return Err(copernicus_explorer::CopernicusError::InvalidArgument(
-                format!("--point requires exactly 2 values (lat,lon), got {}", parts.len()),
+                format!(
+                    "--point requires exactly 2 values (lat,lon), got {}",
+                    parts.len()
+                ),
             ));
         }
         return Ok(Some(Geometry::Point(Point::new(parts[0], parts[1]))));

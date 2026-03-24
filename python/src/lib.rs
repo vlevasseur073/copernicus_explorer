@@ -14,8 +14,8 @@
 //! PyO3 handles reference counting, GIL management, and type conversions
 //! automatically.  We just write idiomatic Rust and annotate with macros.
 
-use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
 
 // ---------------------------------------------------------------------------
 // Error mapping
@@ -53,27 +53,37 @@ struct PySatellite {
 impl PySatellite {
     #[staticmethod]
     fn sentinel1() -> Self {
-        Self { inner: copernicus_explorer::Satellite::Sentinel1 }
+        Self {
+            inner: copernicus_explorer::Satellite::Sentinel1,
+        }
     }
 
     #[staticmethod]
     fn sentinel2() -> Self {
-        Self { inner: copernicus_explorer::Satellite::Sentinel2 }
+        Self {
+            inner: copernicus_explorer::Satellite::Sentinel2,
+        }
     }
 
     #[staticmethod]
     fn sentinel3() -> Self {
-        Self { inner: copernicus_explorer::Satellite::Sentinel3 }
+        Self {
+            inner: copernicus_explorer::Satellite::Sentinel3,
+        }
     }
 
     #[staticmethod]
     fn sentinel5p() -> Self {
-        Self { inner: copernicus_explorer::Satellite::Sentinel5P }
+        Self {
+            inner: copernicus_explorer::Satellite::Sentinel5P,
+        }
     }
 
     #[staticmethod]
     fn sentinel6() -> Self {
-        Self { inner: copernicus_explorer::Satellite::Sentinel6 }
+        Self {
+            inner: copernicus_explorer::Satellite::Sentinel6,
+        }
     }
 
     /// Return the CDSE collection name (e.g. "SENTINEL-2").
@@ -151,7 +161,14 @@ impl PyProduct {
         online: bool,
         cloud_cover: Option<f64>,
     ) -> Self {
-        Self { name, id, acquisition_date, publication_date, online, cloud_cover }
+        Self {
+            name,
+            id,
+            acquisition_date,
+            publication_date,
+            online,
+            cloud_cover,
+        }
     }
 
     fn __repr__(&self) -> String {
@@ -211,7 +228,10 @@ struct PyBoundingBox {
 impl PyBoundingBox {
     #[new]
     fn new(upper_left: (f64, f64), lower_right: (f64, f64)) -> Self {
-        Self { upper_left, lower_right }
+        Self {
+            upper_left,
+            lower_right,
+        }
     }
 
     fn __repr__(&self) -> String {
@@ -330,9 +350,10 @@ impl PySearchQuery {
         }
 
         if let Some(ref start) = self.start_date {
-            let end = self.end_date.as_deref().ok_or_else(|| {
-                PyRuntimeError::new_err("start date set but end date missing")
-            })?;
+            let end = self
+                .end_date
+                .as_deref()
+                .ok_or_else(|| PyRuntimeError::new_err("start date set but end date missing"))?;
             let start_dt = parse_datetime(start)?;
             let end_dt = parse_datetime(end)?;
             query = query.dates(start_dt, end_dt);
@@ -347,9 +368,8 @@ impl PySearchQuery {
         }
 
         if let Some((lat, lon)) = self.point {
-            let geom = copernicus_explorer::Geometry::Point(
-                copernicus_explorer::Point::new(lat, lon),
-            );
+            let geom =
+                copernicus_explorer::Geometry::Point(copernicus_explorer::Point::new(lat, lon));
             query = query.geometry(geom);
         }
 
@@ -398,8 +418,8 @@ fn get_access_token_from_env() -> PyResult<String> {
 #[pyfunction]
 fn download_scene(scene_name: &str, directory: &str, access_token: &str) -> PyResult<String> {
     let dir = std::path::Path::new(directory);
-    let path = copernicus_explorer::download_scene(scene_name, dir, access_token)
-        .map_err(to_pyerr)?;
+    let path =
+        copernicus_explorer::download_scene(scene_name, dir, access_token).map_err(to_pyerr)?;
     Ok(path.to_string_lossy().into_owned())
 }
 
