@@ -1,3 +1,5 @@
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://vlevasseur073.github.io/copernicus_explorer/copernicus_explorer/)
+
 # Copernicus Explorer
 
 A Rust client for browsing and downloading Sentinel satellite products from the
