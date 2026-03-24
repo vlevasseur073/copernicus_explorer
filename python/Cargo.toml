@@ -2,6 +2,7 @@
 name = "copernicus_explorer_python"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [lib]
 name = "copernicus_explorer_py"

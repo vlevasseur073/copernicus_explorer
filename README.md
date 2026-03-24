@@ -3,9 +3,6 @@
 A Rust client for browsing and downloading Sentinel satellite products from the
 [Copernicus Data Space Ecosystem (CDSE)](https://dataspace.copernicus.eu/).
 
-Inspired by [SentinelExplorer.jl](https://github.com/JoshuaBillson/SentinelExplorer.jl)
-and built as a didactic Rust learning project.
-
 ## Features
 
 - **Search** the CDSE catalogue by satellite, product type, date range, cloud
@@ -263,4 +260,4 @@ print(q)
 
 ## License
 
-This project is provided as-is for educational purposes.
+This project is licensed under the [MIT License](LICENSE).
