@@ -141,6 +141,19 @@ impl From<copernicus_explorer::Product> for PyProduct {
 
 #[pymethods]
 impl PyProduct {
+    #[new]
+    #[pyo3(signature = (name, id, acquisition_date, publication_date, online, cloud_cover=None))]
+    fn new(
+        name: String,
+        id: String,
+        acquisition_date: String,
+        publication_date: String,
+        online: bool,
+        cloud_cover: Option<f64>,
+    ) -> Self {
+        Self { name, id, acquisition_date, publication_date, online, cloud_cover }
+    }
+
     fn __repr__(&self) -> String {
         let cloud = match self.cloud_cover {
             Some(c) => format!("{c:.1}%"),
@@ -396,6 +409,32 @@ fn get_scene_id(scene_name: &str) -> PyResult<String> {
     copernicus_explorer::get_scene_id(scene_name).map_err(to_pyerr)
 }
 
+/// Format a list of products as an aligned table (same layout as the CLI).
+///
+/// Returns the table as a string.  Call `print(format_products(results))`
+/// or just use `print_products(results)` for direct output.
+#[pyfunction]
+fn format_products(products: Vec<PyProduct>) -> String {
+    let core_products: Vec<copernicus_explorer::Product> = products
+        .into_iter()
+        .map(|p| copernicus_explorer::Product {
+            name: p.name,
+            id: p.id,
+            acquisition_date: p.acquisition_date,
+            publication_date: p.publication_date,
+            online: p.online,
+            cloud_cover: p.cloud_cover,
+        })
+        .collect();
+    copernicus_explorer::format_products(&core_products)
+}
+
+/// Print a list of products as an aligned table to stdout.
+#[pyfunction]
+fn print_products(products: Vec<PyProduct>) {
+    print!("{}", format_products(products));
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -442,5 +481,7 @@ fn copernicus_explorer_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_access_token_from_env, m)?)?;
     m.add_function(wrap_pyfunction!(download_scene, m)?)?;
     m.add_function(wrap_pyfunction!(get_scene_id, m)?)?;
+    m.add_function(wrap_pyfunction!(format_products, m)?)?;
+    m.add_function(wrap_pyfunction!(print_products, m)?)?;
     Ok(())
 }

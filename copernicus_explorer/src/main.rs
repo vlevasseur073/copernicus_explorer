@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 
 use copernicus_explorer::{
     BoundingBox, Geometry, Point, Satellite, SearchQuery, download_scene, get_access_token,
-    get_access_token_from_env,
+    get_access_token_from_env, print_products,
 };
 
 // `clap` uses Rust's derive macros to turn struct/enum definitions into
@@ -184,31 +184,7 @@ fn run_search(
     );
 
     let products = query.execute()?;
-
-    println!(
-        "{id:<40} {cloud:>6}  {date:<28} {name}",
-        id = "ID",
-        cloud = "CLOUD",
-        date = "ACQUISITION DATE",
-        name = "NAME",
-    );
-    println!("{}", "-".repeat(130));
-
-    for product in &products {
-        let cloud_str = match product.cloud_cover {
-            Some(c) => format!("{c:.1}%"),
-            None => "N/A".into(),
-        };
-        println!(
-            "{id:<40} {cloud:>6}  {date:<28} {name}",
-            id = product.id,
-            cloud = cloud_str,
-            date = product.acquisition_date,
-            name = product.name,
-        );
-    }
-
-    eprintln!("\n{count} product(s) found.", count = products.len());
+    print_products(&products);
     Ok(())
 }
 
