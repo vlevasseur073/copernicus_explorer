@@ -140,9 +140,13 @@ impl SearchQuery {
                     "tile filter is only supported for Sentinel-2".into(),
                 ));
             }
+            // The CDSE catalogue stores tile IDs without the leading "T"
+            // (e.g. "14CPE" not "T14CPE"), but users typically include it
+            // because scene names use the T-prefixed form.
+            let tile_id = tile.strip_prefix('T').unwrap_or(tile);
             let dtype = "OData.CSC.StringAttribute";
             filters.push(format!(
-                "Attributes/{dtype}/any(att:att/Name eq 'tileId' and att/{dtype}/Value eq '{tile}')"
+                "Attributes/{dtype}/any(att:att/Name eq 'tileId' and att/{dtype}/Value eq '{tile_id}')"
             ));
         }
 
@@ -363,5 +367,20 @@ mod tests {
         assert!(Satellite::Sentinel2.is_valid_product("l2a"));
         assert!(Satellite::Sentinel2.is_valid_product("L2A"));
         assert!(Satellite::Sentinel1.is_valid_product("grd"));
+    }
+
+    #[test]
+    fn build_filter_tile_strips_t_prefix() {
+        let query = SearchQuery::new(Satellite::Sentinel2).tile("T31TFJ");
+        let filter = query.build_filter().unwrap();
+        assert!(filter.contains("Value eq '31TFJ'"), "should strip the T prefix: {filter}");
+        assert!(!filter.contains("Value eq 'T31TFJ'"), "should not keep the T prefix");
+    }
+
+    #[test]
+    fn build_filter_tile_without_t_prefix() {
+        let query = SearchQuery::new(Satellite::Sentinel2).tile("31TFJ");
+        let filter = query.build_filter().unwrap();
+        assert!(filter.contains("Value eq '31TFJ'"));
     }
 }
