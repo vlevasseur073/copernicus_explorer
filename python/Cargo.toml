@@ -1,0 +1,13 @@
+[package]
+name = "copernicus_explorer_python"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "copernicus_explorer_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+copernicus_explorer = { path = "../copernicus_explorer" }
+pyo3 = { version = "0.24.2", features = ["extension-module"] }
+chrono = "0.4"
