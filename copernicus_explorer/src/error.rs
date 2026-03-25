@@ -21,6 +21,9 @@ pub enum CopernicusError {
     #[error("search failed: {0}")]
     SearchFailed(String),
 
+    #[error("download failed: {0}")]
+    DownloadFailed(String),
+
     #[error("search returned zero results")]
     NoResults,
 
@@ -29,6 +32,9 @@ pub enum CopernicusError {
 
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("async runtime error: {0}")]
+    RuntimeError(String),
 }
 
 /// A convenience alias so we don't have to write

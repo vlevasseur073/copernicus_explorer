@@ -12,3 +12,4 @@ crate-type = ["cdylib"]
 copernicus_explorer = { path = "../copernicus_explorer" }
 pyo3 = { version = "0.24.2", features = ["extension-module"] }
 chrono = "0.4"
+tokio = { version = "1", features = ["rt-multi-thread"] }

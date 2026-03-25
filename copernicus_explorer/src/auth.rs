@@ -25,15 +25,15 @@ const AUTH_URL: &str =
 /// `match` / `if let` chains and is the idiomatic way to propagate errors
 /// in Rust.  It works because our `CopernicusError` has `#[from]` impls
 /// for `reqwest::Error` and `serde_json::Error`.
-pub fn get_access_token(username: &str, password: &str) -> Result<String> {
+pub async fn get_access_token(username: &str, password: &str) -> Result<String> {
     let mut params = HashMap::new();
     params.insert("client_id", "cdse-public");
     params.insert("username", username);
     params.insert("password", password);
     params.insert("grant_type", "password");
 
-    let client = reqwest::blocking::Client::new();
-    let response = client.post(AUTH_URL).form(&params).send()?;
+    let client = reqwest::Client::new();
+    let response = client.post(AUTH_URL).form(&params).send().await?;
 
     if !response.status().is_success() {
         return Err(CopernicusError::AuthenticationFailed(format!(
@@ -42,7 +42,7 @@ pub fn get_access_token(username: &str, password: &str) -> Result<String> {
         )));
     }
 
-    let body: serde_json::Value = response.json()?;
+    let body: serde_json::Value = response.json().await?;
 
     body["access_token"]
         .as_str()
@@ -60,7 +60,7 @@ pub fn get_access_token(username: &str, password: &str) -> Result<String> {
 ///
 /// `std::env::var` returns `Result<String, VarError>`.  We convert the
 /// error into our `CopernicusError::AuthenticationFailed` using `map_err`.
-pub fn get_access_token_from_env() -> Result<String> {
+pub async fn get_access_token_from_env() -> Result<String> {
     let username = std::env::var("COPERNICUS_USER").map_err(|_| {
         CopernicusError::AuthenticationFailed("COPERNICUS_USER environment variable not set".into())
     })?;
@@ -68,5 +68,5 @@ pub fn get_access_token_from_env() -> Result<String> {
         CopernicusError::AuthenticationFailed("COPERNICUS_PASS environment variable not set".into())
     })?;
 
-    get_access_token(&username, &password)
+    get_access_token(&username, &password).await
 }

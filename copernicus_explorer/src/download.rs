@@ -1,62 +1,134 @@
-use std::fs::File;
-use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use indicatif::{ProgressBar, ProgressStyle};
+use futures::StreamExt;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use tokio::io::AsyncWriteExt;
+use tokio::sync::Semaphore;
 
 use crate::error::{CopernicusError, Result};
+use crate::models::Product;
 use crate::search::get_scene_id;
 
 const DOWNLOAD_BASE_URL: &str = "https://zipper.dataspace.copernicus.eu/odata/v1/Products";
 
 /// Download a Sentinel scene to a local directory.
 ///
-/// # Path and PathBuf
-///
-/// - `&Path` is a borrowed reference to a filesystem path (like `&str` for
-///   strings).  It's the type you use in function parameters.
-/// - `PathBuf` is the owned version (like `String`).  It's what you return
-///   from functions or store in structs.
-///
-/// `Path` handles OS differences (forward vs back slashes) automatically.
-///
-/// # Streaming I/O with a progress bar
-///
-/// Instead of loading the entire file into memory (which could be gigabytes
-/// for satellite imagery), we stream the HTTP response body in chunks and
-/// write each chunk to disk immediately.  This keeps memory usage constant
-/// regardless of file size.
-///
-/// We use the `indicatif` crate to display a progress bar.  `indicatif`
-/// works by wrapping any I/O loop: you create a `ProgressBar`, call
-/// `.inc(n)` after each chunk, and `.finish_with_message(...)` when done.
-///
-/// # The `Read` trait
-///
-/// `response` implements `std::io::Read`, which means we can call
-/// `.read(&mut buf)` to pull bytes in fixed-size chunks.  This is Rust's
-/// universal interface for anything you can read bytes from -- files,
-/// network sockets, compressed streams, etc.
+/// Resolves the scene name to a CDSE UUID via `get_scene_id`, then streams
+/// the product archive to disk with a progress bar.
 ///
 /// # Arguments
 ///
 /// * `scene_name` - The full Sentinel scene name (e.g. "S2B_MSIL2A_20200804T183919_...")
 /// * `dir` - The directory to save the downloaded file into
 /// * `access_token` - A valid CDSE access token from `get_access_token`
-pub fn download_scene(scene_name: &str, dir: &Path, access_token: &str) -> Result<PathBuf> {
-    let id = get_scene_id(scene_name)?;
+pub async fn download_scene(scene_name: &str, dir: &Path, access_token: &str) -> Result<PathBuf> {
+    let id = get_scene_id(scene_name).await?;
+    download_by_id(&id, scene_name, dir, access_token, None).await
+}
 
+/// Download multiple products concurrently with a configurable concurrency limit.
+///
+/// Each product from the input slice is downloaded in parallel (up to
+/// `max_concurrent` at a time).  Progress bars are displayed for all
+/// active downloads using `indicatif::MultiProgress`.
+///
+/// If a product's `id` field is empty, the scene name is resolved to a
+/// CDSE UUID via `get_scene_id` before downloading.  This allows passing
+/// products directly from search results (which have IDs) or constructing
+/// minimal stubs with just a `name` for CLI batch downloads.
+///
+/// Returns one `Result<PathBuf>` per product, in the same order as the
+/// input slice.  Individual failures do not abort the remaining downloads.
+///
+/// # Arguments
+///
+/// * `products` - Slice of `Product` structs (as returned by `SearchQuery::execute`)
+/// * `dir` - The directory to save downloaded files into
+/// * `access_token` - A valid CDSE access token
+/// * `max_concurrent` - Maximum number of simultaneous downloads
+pub async fn download_products(
+    products: &[Product],
+    dir: &Path,
+    access_token: &str,
+    max_concurrent: usize,
+) -> Vec<Result<PathBuf>> {
+    let semaphore = Arc::new(Semaphore::new(max_concurrent));
+    let multi = Arc::new(MultiProgress::new());
+    let client = Arc::new(reqwest::Client::new());
+
+    let mut handles = Vec::with_capacity(products.len());
+
+    for product in products {
+        let sem = Arc::clone(&semaphore);
+        let mp = Arc::clone(&multi);
+        let cl = Arc::clone(&client);
+        let id = product.id.clone();
+        let name = product.name.clone();
+        let token = access_token.to_string();
+        let dir = dir.to_path_buf();
+
+        let handle = tokio::spawn(async move {
+            let _permit = sem
+                .acquire()
+                .await
+                .map_err(|e| CopernicusError::RuntimeError(e.to_string()))?;
+
+            let resolved_id = if id.is_empty() {
+                get_scene_id(&name).await?
+            } else {
+                id
+            };
+
+            download_by_id_with_client(&cl, &resolved_id, &name, &dir, &token, Some(&mp)).await
+        });
+
+        handles.push(handle);
+    }
+
+    let mut results = Vec::with_capacity(handles.len());
+    for handle in handles {
+        match handle.await {
+            Ok(result) => results.push(result),
+            Err(e) => results.push(Err(CopernicusError::RuntimeError(e.to_string()))),
+        }
+    }
+
+    results
+}
+
+/// Core download logic: fetch a product by its CDSE UUID and stream to disk.
+async fn download_by_id(
+    id: &str,
+    scene_name: &str,
+    dir: &Path,
+    access_token: &str,
+    multi: Option<&MultiProgress>,
+) -> Result<PathBuf> {
+    let client = reqwest::Client::new();
+    download_by_id_with_client(&client, id, scene_name, dir, access_token, multi).await
+}
+
+/// Inner download using a shared `reqwest::Client`.
+async fn download_by_id_with_client(
+    client: &reqwest::Client,
+    id: &str,
+    scene_name: &str,
+    dir: &Path,
+    access_token: &str,
+    multi: Option<&MultiProgress>,
+) -> Result<PathBuf> {
     let url = format!("{DOWNLOAD_BASE_URL}({id})/$value");
 
-    let client = reqwest::blocking::Client::new();
     let response = client
         .get(&url)
         .header("Authorization", format!("Bearer {access_token}"))
-        .send()?;
+        .send()
+        .await?;
 
     if !response.status().is_success() {
-        return Err(CopernicusError::SearchFailed(format!(
-            "download failed with HTTP {status}",
+        return Err(CopernicusError::DownloadFailed(format!(
+            "{scene_name}: HTTP {status}",
             status = response.status()
         )));
     }
@@ -72,22 +144,19 @@ pub fn download_scene(scene_name: &str, dir: &Path, access_token: &str) -> Resul
     let total_size = response.content_length();
 
     let pb = create_progress_bar(&filename, total_size);
+    let pb = match multi {
+        Some(mp) => mp.add(pb),
+        None => pb,
+    };
 
-    // Stream the response body to disk in 64 KB chunks.
-    // `response` implements `std::io::Read`, so we can pull bytes
-    // incrementally with `.read()` instead of buffering everything.
-    let mut file = File::create(&output_path)?;
-    let mut source = response;
-    let mut buf = [0u8; 64 * 1024];
+    let mut file = tokio::fs::File::create(&output_path).await?;
+    let mut stream = response.bytes_stream();
     let mut downloaded: u64 = 0;
 
-    loop {
-        let n = std::io::Read::read(&mut source, &mut buf)?;
-        if n == 0 {
-            break;
-        }
-        file.write_all(&buf[..n])?;
-        downloaded += n as u64;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        file.write_all(&chunk).await?;
+        downloaded += chunk.len() as u64;
         pb.set_position(downloaded);
     }
 
@@ -99,10 +168,7 @@ pub fn download_scene(scene_name: &str, dir: &Path, access_token: &str) -> Resul
 /// Create a progress bar appropriate for the download.
 ///
 /// If the server sent a `Content-Length` header, we show a determinate bar
-/// with percentage, downloaded/total bytes, speed, and ETA:
-///
-///   scene.zip  [████████████░░░░░░░░]  62% 158.3/255.1 MB  12.4 MB/s  eta 8s
-///
+/// with percentage, downloaded/total bytes, speed, and ETA.
 /// If the total size is unknown, we show a spinner with a byte counter.
 fn create_progress_bar(filename: &str, total_size: Option<u64>) -> ProgressBar {
     match total_size {

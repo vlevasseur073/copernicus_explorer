@@ -19,11 +19,14 @@ const CATALOGUE_URL: &str = "https://catalogue.dataspace.copernicus.eu/odata/v1/
 /// use copernicus_explorer::models::Satellite;
 /// use chrono::Utc;
 ///
+/// # async fn example() {
 /// let results = SearchQuery::new(Satellite::Sentinel2)
 ///     .product("L2A")
 ///     .max_cloud_cover(20.0)
 ///     .max_results(10)
-///     .execute();
+///     .execute()
+///     .await;
+/// # }
 /// ```
 ///
 /// Each method takes `self` **by value** (consuming it) and returns `Self`,
@@ -178,10 +181,10 @@ impl SearchQuery {
     ///
     /// Returns a `Vec<Product>` -- Rust's growable array, like Julia's
     /// `Vector`.  Each product is a fully typed struct, not a DataFrame row.
-    pub fn execute(&self) -> Result<Vec<Product>> {
+    pub async fn execute(&self) -> Result<Vec<Product>> {
         let filter = self.build_filter()?;
 
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::Client::new();
         let response = client
             .get(CATALOGUE_URL)
             .query(&[
@@ -190,7 +193,8 @@ impl SearchQuery {
                 ("$top", &self.max_results.to_string()),
                 ("$orderby", "ContentDate/Start asc"),
             ])
-            .send()?;
+            .send()
+            .await?;
 
         if !response.status().is_success() {
             return Err(CopernicusError::SearchFailed(format!(
@@ -199,7 +203,7 @@ impl SearchQuery {
             )));
         }
 
-        let odata: ODataResponse = response.json()?;
+        let odata: ODataResponse = response.json().await?;
 
         if odata.value.is_empty() {
             return Err(CopernicusError::NoResults);
@@ -227,7 +231,7 @@ impl SearchQuery {
 ///
 /// This is used by `download_scene` to resolve a human-readable scene name
 /// (like "S2B_MSIL2A_20200804T183919_...") into the UUID needed for download.
-pub fn get_scene_id(scene_name: &str) -> Result<String> {
+pub async fn get_scene_id(scene_name: &str) -> Result<String> {
     let mut filters: Vec<String> = Vec::new();
 
     // Extract sensing date from the scene name (format: YYYYMMDDTHHMMSS)
@@ -255,13 +259,14 @@ pub fn get_scene_id(scene_name: &str) -> Result<String> {
     filters.push(format!("contains(Name,'{scene_name}')"));
 
     let filter = filters.join(" and ");
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::Client::new();
     let response = client
         .get(CATALOGUE_URL)
         .query(&[("$filter", filter.as_str()), ("$expand", "Attributes")])
-        .send()?;
+        .send()
+        .await?;
 
-    let body: serde_json::Value = response.json()?;
+    let body: serde_json::Value = response.json().await?;
     let values = body["value"]
         .as_array()
         .ok_or_else(|| CopernicusError::SearchFailed("unexpected response format".into()))?;

@@ -13,6 +13,12 @@
 //!
 //! PyO3 handles reference counting, GIL management, and type conversions
 //! automatically.  We just write idiomatic Rust and annotate with macros.
+//!
+//! # Blocking wrappers
+//!
+//! The core Rust library is async-first.  Since Python's GIL makes async
+//! impractical here, we use the `blocking` module which creates a Tokio
+//! runtime internally for each call.
 
 use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
@@ -398,7 +404,7 @@ impl PySearchQuery {
 
         query = query.max_results(self.max_results);
 
-        let products = query.execute().map_err(to_pyerr)?;
+        let products = query.execute_blocking().map_err(to_pyerr)?;
         Ok(products.into_iter().map(PyProduct::from).collect())
     }
 
@@ -419,13 +425,13 @@ impl PySearchQuery {
 /// Authenticate with the CDSE identity provider and return an access token.
 #[pyfunction]
 fn get_access_token(username: &str, password: &str) -> PyResult<String> {
-    copernicus_explorer::get_access_token(username, password).map_err(to_pyerr)
+    copernicus_explorer::blocking::get_access_token(username, password).map_err(to_pyerr)
 }
 
 /// Authenticate using COPERNICUS_USER / COPERNICUS_PASS environment variables.
 #[pyfunction]
 fn get_access_token_from_env() -> PyResult<String> {
-    copernicus_explorer::get_access_token_from_env().map_err(to_pyerr)
+    copernicus_explorer::blocking::get_access_token_from_env().map_err(to_pyerr)
 }
 
 /// Download a Sentinel scene to a local directory.
@@ -434,15 +440,59 @@ fn get_access_token_from_env() -> PyResult<String> {
 #[pyfunction]
 fn download_scene(scene_name: &str, directory: &str, access_token: &str) -> PyResult<String> {
     let dir = std::path::Path::new(directory);
-    let path =
-        copernicus_explorer::download_scene(scene_name, dir, access_token).map_err(to_pyerr)?;
+    let path = copernicus_explorer::blocking::download_scene(scene_name, dir, access_token)
+        .map_err(to_pyerr)?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Download multiple products concurrently.
+///
+/// Returns a list of results: each element is either the path to the
+/// downloaded file (str) or None if that download failed.  Errors are
+/// printed to stderr.
+///
+/// # Arguments
+///
+/// * `products` - List of `Product` objects (from `SearchQuery.execute()`)
+/// * `directory` - Directory to save downloaded files
+/// * `access_token` - A valid CDSE access token
+/// * `max_concurrent` - Maximum simultaneous downloads (default: 4)
+#[pyfunction]
+#[pyo3(signature = (products, directory, access_token, max_concurrent=4))]
+fn download_products(
+    products: Vec<PyProduct>,
+    directory: &str,
+    access_token: &str,
+    max_concurrent: usize,
+) -> PyResult<Vec<Option<String>>> {
+    let core_products: Vec<copernicus_explorer::Product> =
+        products.iter().map(Into::into).collect();
+    let dir = std::path::Path::new(directory);
+
+    let results = copernicus_explorer::blocking::download_products(
+        &core_products,
+        dir,
+        access_token,
+        max_concurrent,
+    );
+
+    Ok(results
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| match r {
+            Ok(path) => Some(path.to_string_lossy().into_owned()),
+            Err(e) => {
+                eprintln!("  download failed for {}: {e}", products[i].name);
+                None
+            }
+        })
+        .collect())
 }
 
 /// Look up the CDSE UUID for a scene by its name.
 #[pyfunction]
 fn get_scene_id(scene_name: &str) -> PyResult<String> {
-    copernicus_explorer::get_scene_id(scene_name).map_err(to_pyerr)
+    copernicus_explorer::blocking::get_scene_id(scene_name).map_err(to_pyerr)
 }
 
 /// Format a list of products as an aligned table (same layout as the CLI).
@@ -523,6 +573,7 @@ fn copernicus_explorer_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_access_token, m)?)?;
     m.add_function(wrap_pyfunction!(get_access_token_from_env, m)?)?;
     m.add_function(wrap_pyfunction!(download_scene, m)?)?;
+    m.add_function(wrap_pyfunction!(download_products, m)?)?;
     m.add_function(wrap_pyfunction!(get_scene_id, m)?)?;
     m.add_function(wrap_pyfunction!(format_products, m)?)?;
     m.add_function(wrap_pyfunction!(print_products, m)?)?;

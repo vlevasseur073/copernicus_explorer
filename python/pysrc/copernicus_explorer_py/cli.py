@@ -13,8 +13,10 @@ import click
 from copernicus_explorer_py import (
     BoundingBox,
     Point,
+    Product,
     Satellite,
     SearchQuery,
+    download_products,
     download_scene,
     get_access_token,
     get_access_token_from_env,
@@ -129,21 +131,53 @@ def search(
 
 
 @main.command()
-@click.argument("scene")
-@click.option("-o", "--output-dir", default=".", show_default=True, help="Directory to save the downloaded file.")
+@click.argument("scenes", nargs=-1, required=True)
+@click.option("-o", "--output-dir", default=".", show_default=True, help="Directory to save the downloaded file(s).")
+@click.option("-j", "--concurrent", type=int, default=4, show_default=True, help="Maximum concurrent downloads.")
 @click.option("-u", "--user", default=None, help="Username (reads COPERNICUS_USER env var if omitted).")
 @click.option("-P", "--password", default=None, help="Password (reads COPERNICUS_PASS env var if omitted).")
 def download(
-    scene: str,
+    scenes: tuple[str, ...],
     output_dir: str,
+    concurrent: int,
     user: str | None,
     password: str | None,
 ) -> None:
-    """Download a scene by name."""
+    """Download one or more scenes by name.
+
+    Pass multiple scene names to download them concurrently.
+    """
     token = _resolve_token(user, password)
-    click.echo(f"Resolving scene ID for:\n  {scene}\n", err=True)
-    path = download_scene(scene, output_dir, token)
-    click.echo(f"\nDownload complete: {path}", err=True)
+
+    if len(scenes) == 1:
+        scene = scenes[0]
+        click.echo(f"Resolving scene ID for:\n  {scene}\n", err=True)
+        path = download_scene(scene, output_dir, token)
+        click.echo(f"\nDownload complete: {path}", err=True)
+    else:
+        click.echo(
+            f"Downloading {len(scenes)} scenes (max {concurrent} concurrent)...\n",
+            err=True,
+        )
+        products = [
+            Product(name=s, id="", acquisition_date="", publication_date="", online=True)
+            for s in scenes
+        ]
+        results = download_products(products, output_dir, token, concurrent)
+
+        failures = 0
+        for scene, result in zip(scenes, results):
+            if result is not None:
+                click.echo(f"  OK: {scene} -> {result}", err=True)
+            else:
+                click.echo(f"  FAILED: {scene}", err=True)
+                failures += 1
+
+        ok = len(scenes) - failures
+        click.echo(f"\n{ok} succeeded, {failures} failed.", err=True)
+
+        if failures > 0:
+            sys.exit(1)
 
 
 @main.command()

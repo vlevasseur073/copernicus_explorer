@@ -3,26 +3,48 @@
 //! A Rust client for browsing and downloading Sentinel satellite products
 //! from the [Copernicus Data Space Ecosystem (CDSE)](https://dataspace.copernicus.eu/).
 //!
-//! ## Quick start
+//! ## Async-first design
+//!
+//! The primary API is **async** (tokio-based).  For synchronous contexts
+//! (Python bindings, simple scripts), use the [`blocking`] module which
+//! provides thin wrappers that create a Tokio runtime internally.
+//!
+//! ## Quick start (async)
 //!
 //! ```rust,no_run
-//! use chrono::Utc;
 //! use copernicus_explorer::{Satellite, SearchQuery, get_access_token};
 //!
-//! // Authenticate
-//! let token = get_access_token("user@example.com", "password").unwrap();
+//! #[tokio::main]
+//! async fn main() {
+//!     let token = get_access_token("user@example.com", "password").await.unwrap();
 //!
-//! // Search for Sentinel-2 L2A products
+//!     let products = SearchQuery::new(Satellite::Sentinel2)
+//!         .product("L2A")
+//!         .max_cloud_cover(20.0)
+//!         .max_results(5)
+//!         .execute()
+//!         .await
+//!         .unwrap();
+//!
+//!     for product in &products {
+//!         println!("{product}");
+//!     }
+//! }
+//! ```
+//!
+//! ## Quick start (blocking)
+//!
+//! ```rust,no_run
+//! use copernicus_explorer::{Satellite, SearchQuery, blocking};
+//!
+//! let token = blocking::get_access_token("user@example.com", "password").unwrap();
+//!
 //! let products = SearchQuery::new(Satellite::Sentinel2)
 //!     .product("L2A")
 //!     .max_cloud_cover(20.0)
 //!     .max_results(5)
-//!     .execute()
+//!     .execute_blocking()
 //!     .unwrap();
-//!
-//! for product in &products {
-//!     println!("{product}");
-//! }
 //! ```
 //!
 //! ## Module overview
@@ -33,6 +55,7 @@
 //! the crate root, without needing to know the internal module structure.
 
 pub mod auth;
+pub mod blocking;
 pub mod download;
 pub mod error;
 pub mod geometry;
@@ -43,7 +66,7 @@ pub mod search;
 // This lets users write `use copernicus_explorer::Satellite` instead of
 // `use copernicus_explorer::models::Satellite`.
 pub use auth::{get_access_token, get_access_token_from_env};
-pub use download::download_scene;
+pub use download::{download_products, download_scene};
 pub use error::CopernicusError;
 pub use geometry::{BoundingBox, Geometry, Point};
 pub use models::{Product, Products, Satellite, format_products, print_products};

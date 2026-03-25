@@ -5,16 +5,10 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use clap::{Parser, Subcommand};
 
 use copernicus_explorer::{
-    BoundingBox, Geometry, Point, Satellite, SearchQuery, download_scene, get_access_token,
-    get_access_token_from_env, print_products,
+    BoundingBox, Geometry, Point, Product, Satellite, SearchQuery, download_products,
+    download_scene, get_access_token, get_access_token_from_env, print_products,
 };
 
-// `clap` uses Rust's derive macros to turn struct/enum definitions into
-// a full CLI parser -- argument names, types, help text, and validation
-// are all generated from the code below.  No manual argument parsing!
-//
-// The `#[command(...)]` and `#[arg(...)]` attributes control how each
-// field appears on the command line.
 #[derive(Parser)]
 #[command(
     name = "copernicus-explorer",
@@ -74,14 +68,21 @@ enum Commands {
         max_results: u32,
     },
 
-    /// Download a scene by name.
+    /// Download one or more scenes by name.
+    ///
+    /// Pass multiple scene names to download them concurrently.
     Download {
-        /// Full scene name (e.g. S2B_MSIL2A_20200804T183919_...).
-        scene: String,
+        /// Full scene name(s) (e.g. S2B_MSIL2A_20200804T183919_...).
+        #[arg(required = true)]
+        scenes: Vec<String>,
 
-        /// Directory to save the downloaded file.
+        /// Directory to save the downloaded file(s).
         #[arg(short, long, default_value = ".")]
         output_dir: PathBuf,
+
+        /// Maximum number of concurrent downloads.
+        #[arg(short = 'j', long, default_value = "4")]
+        concurrent: usize,
 
         /// Username (reads COPERNICUS_USER env var if omitted).
         #[arg(short, long)]
@@ -104,7 +105,8 @@ enum Commands {
     },
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
@@ -118,24 +120,37 @@ fn main() {
             point,
             bbox,
             max_results,
-        } => run_search(
-            satellite,
-            product,
-            start,
-            end,
-            tile,
-            cloud,
-            point,
-            bbox,
-            max_results,
-        ),
+        } => {
+            run_search(
+                satellite,
+                product,
+                start,
+                end,
+                tile,
+                cloud,
+                point,
+                bbox,
+                max_results,
+            )
+            .await
+        }
         Commands::Download {
-            scene,
+            scenes,
             output_dir,
+            concurrent,
             user,
             pass,
-        } => run_download(&scene, &output_dir, user.as_deref(), pass.as_deref()),
-        Commands::Auth { user, pass } => run_auth(user.as_deref(), pass.as_deref()),
+        } => {
+            run_download(
+                &scenes,
+                &output_dir,
+                concurrent,
+                user.as_deref(),
+                pass.as_deref(),
+            )
+            .await
+        }
+        Commands::Auth { user, pass } => run_auth(user.as_deref(), pass.as_deref()).await,
     };
 
     if let Err(e) = result {
@@ -145,7 +160,7 @@ fn main() {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn run_search(
+async fn run_search(
     satellite: Satellite,
     product: Option<String>,
     start: Option<String>,
@@ -184,30 +199,86 @@ fn run_search(
         sat = satellite.collection_name()
     );
 
-    let products = query.execute()?;
+    let products = query.execute().await?;
     print_products(&products);
     Ok(())
 }
 
-fn run_download(
-    scene: &str,
+async fn run_download(
+    scenes: &[String],
     output_dir: &Path,
+    concurrent: usize,
     user: Option<&str>,
     pass: Option<&str>,
 ) -> Result<(), copernicus_explorer::CopernicusError> {
-    let token = resolve_token(user, pass)?;
+    let token = resolve_token(user, pass).await?;
 
-    eprintln!("Resolving scene ID for:\n  {scene}\n");
-    let path = download_scene(scene, output_dir, &token)?;
-    eprintln!("\nDownload complete: {}", path.display());
+    if scenes.len() == 1 {
+        let scene = &scenes[0];
+        eprintln!("Resolving scene ID for:\n  {scene}\n");
+        let path = download_scene(scene, output_dir, &token).await?;
+        eprintln!("\nDownload complete: {}", path.display());
+    } else {
+        eprintln!(
+            "Downloading {} scenes (max {} concurrent)...\n",
+            scenes.len(),
+            concurrent
+        );
+
+        let products: Vec<Product> = build_stub_products(scenes);
+        let results = download_products(&products, output_dir, &token, concurrent).await;
+
+        let mut failures = 0;
+        for (product, result) in products.iter().zip(results.iter()) {
+            match result {
+                Ok(path) => eprintln!("  OK: {} -> {}", product.name, path.display()),
+                Err(e) => {
+                    eprintln!("  FAILED: {} -> {e}", product.name);
+                    failures += 1;
+                }
+            }
+        }
+
+        eprintln!(
+            "\n{ok} succeeded, {failures} failed.",
+            ok = products.len() - failures,
+        );
+
+        if failures > 0 {
+            return Err(copernicus_explorer::CopernicusError::DownloadFailed(
+                format!("{failures} download(s) failed"),
+            ));
+        }
+    }
+
     Ok(())
 }
 
-fn run_auth(
+/// Build minimal `Product` stubs from scene names for batch download.
+///
+/// When downloading by scene name, we need to resolve each name to a
+/// CDSE UUID first.  For a single scene `download_scene` does this
+/// internally.  For batch downloads we resolve all IDs up front so
+/// `download_products` can work directly with UUIDs.
+fn build_stub_products(scenes: &[String]) -> Vec<Product> {
+    scenes
+        .iter()
+        .map(|name| Product {
+            name: name.clone(),
+            id: String::new(),
+            acquisition_date: String::new(),
+            publication_date: String::new(),
+            online: true,
+            cloud_cover: None,
+        })
+        .collect()
+}
+
+async fn run_auth(
     user: Option<&str>,
     pass: Option<&str>,
 ) -> Result<(), copernicus_explorer::CopernicusError> {
-    let token = resolve_token(user, pass)?;
+    let token = resolve_token(user, pass).await?;
     let preview_len = 20.min(token.len());
     println!("Authentication successful!");
     println!("Token: {}...", &token[..preview_len]);
@@ -219,13 +290,13 @@ fn run_auth(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn resolve_token(
+async fn resolve_token(
     user: Option<&str>,
     pass: Option<&str>,
 ) -> Result<String, copernicus_explorer::CopernicusError> {
     match (user, pass) {
-        (Some(u), Some(p)) => get_access_token(u, p),
-        _ => get_access_token_from_env(),
+        (Some(u), Some(p)) => get_access_token(u, p).await,
+        _ => get_access_token_from_env().await,
     }
 }
 
