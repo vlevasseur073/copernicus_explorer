@@ -187,56 +187,61 @@ impl fmt::Display for Product {
     }
 }
 
-/// Format a slice of products as an aligned table (same layout as the CLI).
+/// A newtype wrapper around a slice of [`Product`]s that implements
+/// [`fmt::Display`] to render an aligned table.
 ///
-/// Returns the full table as a `String` so it can be printed, logged, or
-/// returned to a foreign language binding.
+/// Rust's orphan rule prevents implementing `Display` directly on
+/// `&[Product]`, so we wrap it in a newtype.  This lets you write:
 ///
-/// # Why a free function instead of a method?
-///
-/// We're formatting a *collection* of products, not a single one.  Rust
-/// doesn't let you implement `Display` on `Vec<Product>` (orphan rule),
-/// so a free function is the idiomatic choice.
-pub fn format_products(products: &[Product]) -> String {
-    use std::fmt::Write;
+/// ```rust,no_run
+/// # let products: Vec<copernicus_explorer::Product> = vec![];
+/// use copernicus_explorer::Products;
+/// println!("{}", Products(&products));
+/// ```
+pub struct Products<'a>(pub &'a [Product]);
 
-    let mut buf = String::new();
-
-    writeln!(
-        buf,
-        "{id:<40} {cloud:>6}  {date:<28} NAME",
-        id = "ID",
-        cloud = "CLOUD",
-        date = "ACQUISITION DATE",
-    )
-    .unwrap();
-    writeln!(buf, "{}", "-".repeat(130)).unwrap();
-
-    for p in products {
-        let cloud_str = match p.cloud_cover {
-            Some(c) => format!("{c:.1}%"),
-            None => "N/A".into(),
-        };
+impl fmt::Display for Products<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
-            buf,
-            "{id:<40} {cloud:>6}  {date:<28} {name}",
-            id = p.id,
-            cloud = cloud_str,
-            date = p.acquisition_date,
-            name = p.name,
-        )
-        .unwrap();
-    }
+            f,
+            "{id:<40} {cloud:>6}  {date:<28} NAME",
+            id = "ID",
+            cloud = "CLOUD",
+            date = "ACQUISITION DATE",
+        )?;
+        writeln!(f, "{}", "-".repeat(130))?;
 
-    writeln!(buf, "\n{count} product(s) found.", count = products.len()).unwrap();
-    buf
+        for p in self.0 {
+            let cloud_str = match p.cloud_cover {
+                Some(c) => format!("{c:.1}%"),
+                None => "N/A".into(),
+            };
+            writeln!(
+                f,
+                "{id:<40} {cloud:>6}  {date:<28} {name}",
+                id = p.id,
+                cloud = cloud_str,
+                date = p.acquisition_date,
+                name = p.name,
+            )?;
+        }
+
+        write!(f, "\n{count} product(s) found.", count = self.0.len())
+    }
+}
+
+/// Format a slice of products as an aligned table.
+///
+/// Convenience wrapper around [`Products`]'s `Display` impl.
+pub fn format_products(products: &[Product]) -> String {
+    Products(products).to_string()
 }
 
 /// Print a slice of products as an aligned table to stdout.
 ///
-/// Convenience wrapper around [`format_products`] for quick use.
+/// Convenience wrapper around [`Products`]'s `Display` impl.
 pub fn print_products(products: &[Product]) {
-    print!("{}", format_products(products));
+    println!("{}", Products(products));
 }
 
 /// Raw response envelope from the CDSE OData API.

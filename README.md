@@ -176,6 +176,8 @@ fn main() -> Result<(), copernicus_explorer::CopernicusError> {
 }
 ```
 
+More examples can be found in [rust examples](copernicus_explorer/examples)
+
 ## Python bindings
 
 The `python/` crate provides native Python bindings via
@@ -205,6 +207,8 @@ print(s2.known_products())   # ['L1C', 'L2A']
 results = (
     ce.SearchQuery(s2)
     .product("L2A")
+    # dates can be datetime or ISO-8601 string
+    #.dates(datetime.now()-timedelta(days=7),datetime.now())
     .dates("2026-03-01", "2026-03-24")
     .max_cloud_cover(20.0)
     .geometry_point(ce.Point(43.6, 1.44))
@@ -220,6 +224,8 @@ token = ce.get_access_token("user@example.com", "password")
 path = ce.download_scene(results[0].name, "./data", token)
 print(path)
 ```
+
+More examples can be found in [python examples](python/examples)
 
 ### Python API reference
 

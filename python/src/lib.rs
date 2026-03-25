@@ -14,8 +14,9 @@
 //! PyO3 handles reference counting, GIL management, and type conversions
 //! automatically.  We just write idiomatic Rust and annotate with macros.
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
+use pyo3::types::PyDateTime;
 
 // ---------------------------------------------------------------------------
 // Error mapping
@@ -143,6 +144,19 @@ impl From<copernicus_explorer::Product> for PyProduct {
             id: p.id,
             acquisition_date: p.acquisition_date,
             publication_date: p.publication_date,
+            online: p.online,
+            cloud_cover: p.cloud_cover,
+        }
+    }
+}
+
+impl From<&PyProduct> for copernicus_explorer::Product {
+    fn from(p: &PyProduct) -> Self {
+        Self {
+            name: p.name.clone(),
+            id: p.id.clone(),
+            acquisition_date: p.acquisition_date.clone(),
+            publication_date: p.publication_date.clone(),
             online: p.online,
             cloud_cover: p.cloud_cover,
         }
@@ -301,12 +315,14 @@ impl PySearchQuery {
         self.clone()
     }
 
-    /// Set the date range filter.  Dates should be ISO-8601 strings
+    /// Set the date range filter.
+    ///
+    /// Accepts `datetime.datetime` objects or ISO-8601 strings
     /// (e.g. "2024-01-01" or "2024-01-01T00:00:00Z").
-    fn dates(&mut self, start: &str, end: &str) -> Self {
-        self.start_date = Some(start.to_string());
-        self.end_date = Some(end.to_string());
-        self.clone()
+    fn dates(&mut self, start: &Bound<'_, PyAny>, end: &Bound<'_, PyAny>) -> PyResult<Self> {
+        self.start_date = Some(pyany_to_iso(start)?);
+        self.end_date = Some(pyany_to_iso(end)?);
+        Ok(self.clone())
     }
 
     /// Set the Sentinel-2 tile filter (e.g. "T31TFJ").
@@ -435,29 +451,36 @@ fn get_scene_id(scene_name: &str) -> PyResult<String> {
 /// or just use `print_products(results)` for direct output.
 #[pyfunction]
 fn format_products(products: Vec<PyProduct>) -> String {
-    let core_products: Vec<copernicus_explorer::Product> = products
-        .into_iter()
-        .map(|p| copernicus_explorer::Product {
-            name: p.name,
-            id: p.id,
-            acquisition_date: p.acquisition_date,
-            publication_date: p.publication_date,
-            online: p.online,
-            cloud_cover: p.cloud_cover,
-        })
-        .collect();
-    copernicus_explorer::format_products(&core_products)
+    let core_products: Vec<copernicus_explorer::Product> =
+        products.iter().map(Into::into).collect();
+    copernicus_explorer::Products(&core_products).to_string()
 }
 
 /// Print a list of products as an aligned table to stdout.
 #[pyfunction]
 fn print_products(products: Vec<PyProduct>) {
-    print!("{}", format_products(products));
+    let core_products: Vec<copernicus_explorer::Product> =
+        products.iter().map(Into::into).collect();
+    println!("{}", copernicus_explorer::Products(&core_products));
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Extract an ISO-8601 string from a Python `datetime` or `str`.
+fn pyany_to_iso(obj: &Bound<'_, PyAny>) -> PyResult<String> {
+    if obj.is_instance_of::<pyo3::types::PyString>() {
+        return obj.extract::<String>();
+    }
+    if obj.downcast::<PyDateTime>().is_ok() {
+        let iso: String = obj.call_method0("isoformat")?.extract()?;
+        return Ok(iso);
+    }
+    Err(PyTypeError::new_err(
+        "expected a datetime.datetime or an ISO-8601 string",
+    ))
+}
 
 fn parse_datetime(s: &str) -> PyResult<chrono::DateTime<chrono::Utc>> {
     use chrono::{NaiveDate, NaiveDateTime, TimeZone, Utc};
