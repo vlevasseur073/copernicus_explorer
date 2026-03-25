@@ -5,10 +5,11 @@ build-backend = "maturin"
 [project]
 name = "copernicus-explorer"
 dynamic = ["version"]
-description = "Python bindings for the Copernicus Explorer Rust library"
+description = "Browse and download Sentinel satellite products from the Copernicus Data Space Ecosystem (CDSE)"
 requires-python = ">=3.9"
 license = "MIT"
 dependencies = ["click>=8.0"]
+readme = {file = "../README.md", content-type = "text/markdown"}
 
 [project.scripts]
 copernicus-explorer = "copernicus_explorer_py.cli:main"
