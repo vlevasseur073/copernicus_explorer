@@ -1,4 +1,5 @@
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://vlevasseur073.github.io/copernicus_explorer/copernicus_explorer/)
+[![Latest Version](https://img.shields.io/crates/v/copernicus_explorer.svg)](https://crates.io/crates/copernicus_explorer)
+[![copernicus-explorer documentation](https://docs.rs/copernicus_explorer/badge.svg)](https://docs.rs/copernicus_explorer/latest/copernicus_explorer/)
 
 # Copernicus Explorer
 
