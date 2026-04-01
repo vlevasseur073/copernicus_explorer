@@ -142,7 +142,8 @@ def search(
 @main.command()
 @click.argument("scenes", nargs=-1, required=True)
 @click.option("--id", "by_id", is_flag=True, default=False, help="Treat arguments as CDSE product UUIDs instead of scene names.")
-@click.option("-o", "--output-dir", default=".", show_default=True, help="Directory to save the downloaded file(s).")
+@click.option("-o", "--output-dir", default=".", show_default=True, help="Directory or S3 URI (s3://bucket/prefix/) to save the downloaded file(s).")
+@click.option("--s3-config", default=None, type=click.Path(exists=True), help="Path to S3 credentials config file (rclone-style INI).")
 @click.option("-j", "--concurrent", type=int, default=4, show_default=True, help="Maximum concurrent downloads.")
 @click.option("-u", "--user", default=None, help="Username (reads COPERNICUS_USER env var if omitted).")
 @click.option("-P", "--password", default=None, help="Password (reads COPERNICUS_PASS env var if omitted).")
@@ -150,6 +151,7 @@ def download(
     scenes: tuple[str, ...],
     by_id: bool,
     output_dir: str,
+    s3_config: str | None,
     concurrent: int,
     user: str | None,
     password: str | None,
@@ -164,21 +166,22 @@ def download(
     token = _resolve_token(user, password)
 
     if by_id:
-        _download_by_ids(scenes, output_dir, concurrent, token)
+        _download_by_ids(scenes, output_dir, s3_config, concurrent, token)
     else:
-        _download_by_names(scenes, output_dir, concurrent, token)
+        _download_by_names(scenes, output_dir, s3_config, concurrent, token)
 
 
 def _download_by_names(
     scenes: tuple[str, ...],
     output_dir: str,
+    s3_config: str | None,
     concurrent: int,
     token: str,
 ) -> None:
     if len(scenes) == 1:
         scene = scenes[0]
         click.echo(f"Resolving scene ID for:\n  {scene}\n", err=True)
-        path = download_scene(scene, output_dir, token)
+        path = download_scene(scene, output_dir, token, s3_config=s3_config)
         click.echo(f"\nDownload complete: {path}", err=True)
     else:
         click.echo(
@@ -189,19 +192,20 @@ def _download_by_names(
             Product(name=s, id="", acquisition_date="", publication_date="", online=True)
             for s in scenes
         ]
-        results = download_products(products, output_dir, token, concurrent)
+        results = download_products(products, output_dir, token, concurrent, s3_config=s3_config)
         _report_batch_results(scenes, results)
 
 
 def _download_by_ids(
     ids: tuple[str, ...],
     output_dir: str,
+    s3_config: str | None,
     concurrent: int,
     token: str,
 ) -> None:
     if len(ids) == 1:
         click.echo(f"Downloading product by ID:\n  {ids[0]}\n", err=True)
-        path = download_by_id(ids[0], output_dir, token)
+        path = download_by_id(ids[0], output_dir, token, s3_config=s3_config)
         click.echo(f"\nDownload complete: {path}", err=True)
     else:
         click.echo(
@@ -212,7 +216,7 @@ def _download_by_ids(
             Product(name="", id=pid, acquisition_date="", publication_date="", online=True)
             for pid in ids
         ]
-        results = download_products(products, output_dir, token, concurrent)
+        results = download_products(products, output_dir, token, concurrent, s3_config=s3_config)
         _report_batch_results(ids, results)
 
 

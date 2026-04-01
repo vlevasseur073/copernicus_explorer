@@ -8,23 +8,30 @@ use tokio::sync::Semaphore;
 
 use crate::error::{CopernicusError, Result};
 use crate::models::Product;
+use crate::s3::{OutputDestination, S3Destination};
 use crate::search::get_scene_id;
 
 const DOWNLOAD_BASE_URL: &str = "https://zipper.dataspace.copernicus.eu/odata/v1/Products";
+
+// ---------------------------------------------------------------------------
+// Public API — local filesystem (backward-compatible)
+// ---------------------------------------------------------------------------
 
 /// Download a Sentinel scene to a local directory.
 ///
 /// Resolves the scene name to a CDSE UUID via `get_scene_id`, then streams
 /// the product archive to disk with a progress bar.
-///
-/// # Arguments
-///
-/// * `scene_name` - The full Sentinel scene name (e.g. "S2B_MSIL2A_20200804T183919_...")
-/// * `dir` - The directory to save the downloaded file into
-/// * `access_token` - A valid CDSE access token from `get_access_token`
 pub async fn download_scene(scene_name: &str, dir: &Path, access_token: &str) -> Result<PathBuf> {
     let id = get_scene_id(scene_name).await?;
-    download_by_id_inner(&id, scene_name, dir, access_token, None).await
+    download_by_id_inner(
+        &id,
+        scene_name,
+        &OutputDestination::Local(dir.to_path_buf()),
+        access_token,
+        None,
+    )
+    .await
+    .map(PathBuf::from)
 }
 
 /// Download a Sentinel product by its CDSE UUID.
@@ -32,17 +39,16 @@ pub async fn download_scene(scene_name: &str, dir: &Path, access_token: &str) ->
 /// Use this when you already have the product ID (e.g. from a previous
 /// search), avoiding the extra API call that [`download_scene`] makes to
 /// resolve a scene name to an ID.
-///
-/// The downloaded filename is derived from the server's `Content-Disposition`
-/// header, falling back to `<id>.zip` if the header is absent.
-///
-/// # Arguments
-///
-/// * `id` - The CDSE product UUID
-/// * `dir` - The directory to save the downloaded file into
-/// * `access_token` - A valid CDSE access token from `get_access_token`
 pub async fn download_by_id(id: &str, dir: &Path, access_token: &str) -> Result<PathBuf> {
-    download_by_id_inner(id, id, dir, access_token, None).await
+    download_by_id_inner(
+        id,
+        id,
+        &OutputDestination::Local(dir.to_path_buf()),
+        access_token,
+        None,
+    )
+    .await
+    .map(PathBuf::from)
 }
 
 /// Download multiple products concurrently with a configurable concurrency limit.
@@ -50,27 +56,54 @@ pub async fn download_by_id(id: &str, dir: &Path, access_token: &str) -> Result<
 /// Each product from the input slice is downloaded in parallel (up to
 /// `max_concurrent` at a time).  Progress bars are displayed for all
 /// active downloads using `indicatif::MultiProgress`.
-///
-/// If a product's `id` field is empty, the scene name is resolved to a
-/// CDSE UUID via `get_scene_id` before downloading.  This allows passing
-/// products directly from search results (which have IDs) or constructing
-/// minimal stubs with just a `name` for CLI batch downloads.
-///
-/// Returns one `Result<PathBuf>` per product, in the same order as the
-/// input slice.  Individual failures do not abort the remaining downloads.
-///
-/// # Arguments
-///
-/// * `products` - Slice of `Product` structs (as returned by `SearchQuery::execute`)
-/// * `dir` - The directory to save downloaded files into
-/// * `access_token` - A valid CDSE access token
-/// * `max_concurrent` - Maximum number of simultaneous downloads
 pub async fn download_products(
     products: &[Product],
     dir: &Path,
     access_token: &str,
     max_concurrent: usize,
 ) -> Vec<Result<PathBuf>> {
+    download_products_to(
+        products,
+        &OutputDestination::Local(dir.to_path_buf()),
+        access_token,
+        max_concurrent,
+    )
+    .await
+    .into_iter()
+    .map(|r| r.map(PathBuf::from))
+    .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Public API — generic destination (local or S3)
+// ---------------------------------------------------------------------------
+
+/// Download a scene to an arbitrary destination (local path or S3 bucket).
+pub async fn download_scene_to(
+    scene_name: &str,
+    dest: &OutputDestination,
+    access_token: &str,
+) -> Result<String> {
+    let id = get_scene_id(scene_name).await?;
+    download_by_id_inner(&id, scene_name, dest, access_token, None).await
+}
+
+/// Download a product by CDSE UUID to an arbitrary destination.
+pub async fn download_by_id_to(
+    id: &str,
+    dest: &OutputDestination,
+    access_token: &str,
+) -> Result<String> {
+    download_by_id_inner(id, id, dest, access_token, None).await
+}
+
+/// Download multiple products to an arbitrary destination.
+pub async fn download_products_to(
+    products: &[Product],
+    dest: &OutputDestination,
+    access_token: &str,
+    max_concurrent: usize,
+) -> Vec<Result<String>> {
     let semaphore = Arc::new(Semaphore::new(max_concurrent));
     let multi = Arc::new(MultiProgress::new());
     let client = Arc::new(reqwest::Client::new());
@@ -84,7 +117,7 @@ pub async fn download_products(
         let id = product.id.clone();
         let name = product.name.clone();
         let token = access_token.to_string();
-        let dir = dir.to_path_buf();
+        let dest = dest.clone();
 
         let handle = tokio::spawn(async move {
             let _permit = sem
@@ -98,7 +131,7 @@ pub async fn download_products(
                 id
             };
 
-            download_by_id_with_client(&cl, &resolved_id, &name, &dir, &token, Some(&mp)).await
+            download_by_id_with_client(&cl, &resolved_id, &name, &dest, &token, Some(&mp)).await
         });
 
         handles.push(handle);
@@ -115,16 +148,20 @@ pub async fn download_products(
     results
 }
 
-/// Core download logic: fetch a product by its CDSE UUID and stream to disk.
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Core download logic: fetch a product by its CDSE UUID and write to destination.
 async fn download_by_id_inner(
     id: &str,
     display_name: &str,
-    dir: &Path,
+    dest: &OutputDestination,
     access_token: &str,
     multi: Option<&MultiProgress>,
-) -> Result<PathBuf> {
+) -> Result<String> {
     let client = reqwest::Client::new();
-    download_by_id_with_client(&client, id, display_name, dir, access_token, multi).await
+    download_by_id_with_client(&client, id, display_name, dest, access_token, multi).await
 }
 
 /// Inner download using a shared `reqwest::Client`.
@@ -132,10 +169,10 @@ async fn download_by_id_with_client(
     client: &reqwest::Client,
     id: &str,
     display_name: &str,
-    dir: &Path,
+    dest: &OutputDestination,
     access_token: &str,
     multi: Option<&MultiProgress>,
-) -> Result<PathBuf> {
+) -> Result<String> {
     let url = format!("{DOWNLOAD_BASE_URL}({id})/$value");
 
     let response = client
@@ -158,7 +195,6 @@ async fn download_by_id_with_client(
         .and_then(extract_filename)
         .unwrap_or_else(|| format!("{display_name}.zip"));
 
-    let output_path = dir.join(&filename);
     let total_size = response.content_length();
 
     let pb = create_progress_bar(&filename, total_size);
@@ -167,6 +203,23 @@ async fn download_by_id_with_client(
         None => pb,
     };
 
+    let result = match dest {
+        OutputDestination::Local(dir) => write_to_local(dir, &filename, response, &pb).await?,
+        OutputDestination::S3(s3dest) => write_to_s3(s3dest, &filename, response, &pb).await?,
+    };
+
+    pb.finish_with_message(format!("saved to {result}"));
+
+    Ok(result)
+}
+
+async fn write_to_local(
+    dir: &Path,
+    filename: &str,
+    response: reqwest::Response,
+    pb: &ProgressBar,
+) -> Result<String> {
+    let output_path = dir.join(filename);
     let mut file = tokio::fs::File::create(&output_path).await?;
     let mut stream = response.bytes_stream();
     let mut downloaded: u64 = 0;
@@ -178,16 +231,31 @@ async fn download_by_id_with_client(
         pb.set_position(downloaded);
     }
 
-    pb.finish_with_message(format!("saved to {}", output_path.display()));
+    Ok(output_path.to_string_lossy().into_owned())
+}
 
-    Ok(output_path)
+async fn write_to_s3(
+    s3dest: &S3Destination,
+    filename: &str,
+    response: reqwest::Response,
+    pb: &ProgressBar,
+) -> Result<String> {
+    let mut stream = response.bytes_stream();
+    let mut buffer = Vec::new();
+    let mut downloaded: u64 = 0;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        downloaded += chunk.len() as u64;
+        pb.set_position(downloaded);
+        buffer.extend_from_slice(&chunk);
+    }
+
+    let mut cursor = std::io::Cursor::new(buffer);
+    s3dest.upload(&mut cursor, filename).await
 }
 
 /// Create a progress bar appropriate for the download.
-///
-/// If the server sent a `Content-Length` header, we show a determinate bar
-/// with percentage, downloaded/total bytes, speed, and ETA.
-/// If the total size is unknown, we show a spinner with a byte counter.
 fn create_progress_bar(filename: &str, total_size: Option<u64>) -> ProgressBar {
     match total_size {
         Some(total) => {
@@ -218,7 +286,6 @@ fn create_progress_bar(filename: &str, total_size: Option<u64>) -> ProgressBar {
 }
 
 /// Extract filename from a Content-Disposition header value.
-/// E.g. `attachment; filename="scene.zip"` -> `"scene.zip"`
 fn extract_filename(header_value: &str) -> Option<String> {
     header_value.split(';').find_map(|part| {
         let part = part.trim();

@@ -60,14 +60,19 @@ pub mod download;
 pub mod error;
 pub mod geometry;
 pub mod models;
+pub mod s3;
 pub mod search;
 
 // Re-export the most commonly used types at the crate root for convenience.
 // This lets users write `use copernicus_explorer::Satellite` instead of
 // `use copernicus_explorer::models::Satellite`.
 pub use auth::{get_access_token, get_access_token_from_env};
-pub use download::{download_by_id, download_products, download_scene};
+pub use download::{
+    download_by_id, download_by_id_to, download_products, download_products_to, download_scene,
+    download_scene_to,
+};
 pub use error::CopernicusError;
 pub use geometry::{BoundingBox, Geometry, Point, Polygon};
 pub use models::{Product, Products, Satellite, format_products, print_products};
+pub use s3::{OutputDestination, S3Config, S3Destination, parse_output_destination};
 pub use search::{SearchQuery, get_scene_id};

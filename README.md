@@ -9,7 +9,8 @@ A Rust client for browsing and downloading Sentinel satellite products from the
 
 - **Search** the CDSE catalogue by satellite, product type, date range, cloud
   cover, tile ID, point, bounding box, or GeoJSON geometry
-- **Download** scenes by name with Bearer-token authentication
+- **Download** scenes by name with Bearer-token authentication, to local
+  filesystem or directly to an **S3-compatible bucket**
 - **Batch download** multiple products concurrently with configurable parallelism
 - **Authenticate** against the CDSE OAuth2 identity provider
 - Supports Sentinel-1, Sentinel-2, Sentinel-3, Sentinel-5P, and Sentinel-6
@@ -42,6 +43,7 @@ copernicus_explorer/       Cargo workspace root
       auth.rs              OAuth2 token retrieval (reqwest, async)
       search.rs            SearchQuery builder, OData filter construction (async)
       download.rs          Single & batch download with streaming I/O + progress bars (async)
+      s3.rs                S3Config, OutputDestination, INI config parser, S3 upload
       blocking.rs          Synchronous wrappers (block_on) for non-async contexts
     examples/
       test_rust_api.rs     Interactive demo: search, download one or all results
@@ -146,7 +148,36 @@ copernicus_explorer download \
 copernicus_explorer download --id \
   "a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
   -o ./data
+
+# Download directly to an S3-compatible bucket
+copernicus_explorer download --id \
+  "a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
+  -o s3://my-bucket/SAFE/ --s3-config ~/.config/copernicus_explorer/s3.conf
 ```
+
+S3 credentials are resolved in order: `--s3-config` flag, default config at
+`~/.config/copernicus_explorer/s3.conf`, then environment variables (`S3_*`,
+then `AWS_*`). The config file uses rclone-style INI format where the section
+name matches the bucket name:
+
+```ini
+[my-bucket]
+access_key_id = ...
+secret_access_key = ...
+region = sbg
+endpoint = https://s3.sbg.perf.cloud.ovh.net
+```
+
+If the file contains multiple sections, the one matching the bucket from the
+`s3://` URI is used. If no section matches, resolution falls back to
+environment variables.
+
+| Variable (checked first) | Fallback variable |
+|--------------------------|-------------------|
+| `S3_ACCESS_KEY_ID` | `AWS_ACCESS_KEY_ID` |
+| `S3_SECRET_ACCESS_KEY` | `AWS_SECRET_ACCESS_KEY` |
+| `S3_ENDPOINT` | `AWS_ENDPOINT_URL` |
+| `S3_REGION` | `AWS_REGION` |
 
 **Options:**
 
@@ -154,7 +185,8 @@ copernicus_explorer download --id \
 |------|-------------|
 | `<SCENES>...` | One or more scene names or product IDs (depending on `--id`) |
 | `--id` | Treat arguments as CDSE product UUIDs instead of scene names |
-| `-o, --output-dir <DIR>` | Output directory (default: `.`) |
+| `-o, --output-dir <DIR or S3 URI>` | Output directory or `s3://bucket/prefix/` (default: `.`) |
+| `--s3-config <FILE>` | Path to S3 credentials config file (rclone-style INI) |
 | `-j, --concurrent <N>` | Maximum concurrent downloads (default: `4`) |
 | `-u, --user <USER>` | Username (or set `COPERNICUS_USER`) |
 | `-P, --pass <PASS>` | Password (or set `COPERNICUS_PASS`) |
@@ -317,9 +349,9 @@ More examples can be found in [python examples](python/examples)
 |----------|-------------|
 | `get_access_token(username, password)` | Authenticate and return an access token string |
 | `get_access_token_from_env()` | Authenticate using `COPERNICUS_USER` / `COPERNICUS_PASS` env vars |
-| `download_scene(scene_name, directory, token)` | Download a single scene by name; returns the output file path |
-| `download_by_id(id, directory, token)` | Download a single product by CDSE UUID; skips name-to-ID resolution |
-| `download_products(products, directory, token, max_concurrent=4)` | Download multiple products concurrently; returns a list of paths (or `None` on failure) |
+| `download_scene(scene_name, directory, token, s3_config=None)` | Download a single scene by name; returns the output file path (or S3 URI) |
+| `download_by_id(id, directory, token, s3_config=None)` | Download a single product by CDSE UUID; skips name-to-ID resolution |
+| `download_products(products, directory, token, max_concurrent=4, s3_config=None)` | Download multiple products concurrently; returns a list of paths (or `None` on failure) |
 | `get_scene_id(scene_name)` | Resolve a scene name to its CDSE UUID |
 
 ## Running tests

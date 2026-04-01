@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{CopernicusError, Result};
 use crate::models::Product;
+use crate::s3::OutputDestination;
 use crate::search::SearchQuery;
 
 fn runtime() -> Result<tokio::runtime::Runtime> {
@@ -61,6 +62,42 @@ pub fn download_products(
         Ok(rt) => rt.block_on(crate::download::download_products(
             products,
             dir,
+            access_token,
+            max_concurrent,
+        )),
+        Err(e) => vec![Err(e)],
+    }
+}
+
+/// Blocking version of [`crate::download::download_scene_to`].
+pub fn download_scene_to(
+    scene_name: &str,
+    dest: &OutputDestination,
+    access_token: &str,
+) -> Result<String> {
+    runtime()?.block_on(crate::download::download_scene_to(
+        scene_name,
+        dest,
+        access_token,
+    ))
+}
+
+/// Blocking version of [`crate::download::download_by_id_to`].
+pub fn download_by_id_to(id: &str, dest: &OutputDestination, access_token: &str) -> Result<String> {
+    runtime()?.block_on(crate::download::download_by_id_to(id, dest, access_token))
+}
+
+/// Blocking version of [`crate::download::download_products_to`].
+pub fn download_products_to(
+    products: &[Product],
+    dest: &OutputDestination,
+    access_token: &str,
+    max_concurrent: usize,
+) -> Vec<Result<String>> {
+    match runtime() {
+        Ok(rt) => rt.block_on(crate::download::download_products_to(
+            products,
+            dest,
             access_token,
             max_concurrent,
         )),

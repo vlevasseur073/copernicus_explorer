@@ -35,6 +35,9 @@ pub enum CopernicusError {
 
     #[error("async runtime error: {0}")]
     RuntimeError(String),
+
+    #[error("S3 error: {0}")]
+    S3Error(String),
 }
 
 /// A convenience alias so we don't have to write

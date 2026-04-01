@@ -5,8 +5,9 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use clap::{Parser, Subcommand};
 
 use copernicus_explorer::{
-    BoundingBox, Geometry, Point, Product, Satellite, SearchQuery, download_by_id,
-    download_products, download_scene, get_access_token, get_access_token_from_env, print_products,
+    BoundingBox, Geometry, Point, Product, Satellite, SearchQuery, download_by_id_to,
+    download_products_to, download_scene_to, get_access_token, get_access_token_from_env,
+    parse_output_destination, print_products,
 };
 
 #[derive(Parser)]
@@ -88,9 +89,14 @@ enum Commands {
         #[arg(long)]
         id: bool,
 
-        /// Directory to save the downloaded file(s).
+        /// Output directory or S3 URI (e.g. s3://bucket/prefix/).
         #[arg(short, long, default_value = ".")]
-        output_dir: PathBuf,
+        output_dir: String,
+
+        /// Path to an S3 credentials config file (rclone-style INI).
+        /// Only used when --output-dir is an s3:// URI.
+        #[arg(long, value_name = "FILE")]
+        s3_config: Option<PathBuf>,
 
         /// Maximum number of concurrent downloads.
         #[arg(short = 'j', long, default_value = "4")]
@@ -152,6 +158,7 @@ async fn main() {
             scenes,
             id,
             output_dir,
+            s3_config,
             concurrent,
             user,
             pass,
@@ -160,6 +167,7 @@ async fn main() {
                 &scenes,
                 id,
                 &output_dir,
+                s3_config.as_deref(),
                 concurrent,
                 user.as_deref(),
                 pass.as_deref(),
@@ -224,31 +232,33 @@ async fn run_search(
 async fn run_download(
     scenes: &[String],
     by_id: bool,
-    output_dir: &Path,
+    output_dir: &str,
+    s3_config: Option<&Path>,
     concurrent: usize,
     user: Option<&str>,
     pass: Option<&str>,
 ) -> Result<(), copernicus_explorer::CopernicusError> {
     let token = resolve_token(user, pass).await?;
+    let dest = parse_output_destination(output_dir, s3_config)?;
 
     if by_id {
-        run_download_by_id(scenes, output_dir, concurrent, &token).await
+        run_download_by_id(scenes, &dest, concurrent, &token).await
     } else {
-        run_download_by_name(scenes, output_dir, concurrent, &token).await
+        run_download_by_name(scenes, &dest, concurrent, &token).await
     }
 }
 
 async fn run_download_by_name(
     scenes: &[String],
-    output_dir: &Path,
+    dest: &copernicus_explorer::OutputDestination,
     concurrent: usize,
     token: &str,
 ) -> Result<(), copernicus_explorer::CopernicusError> {
     if scenes.len() == 1 {
         let scene = &scenes[0];
         eprintln!("Resolving scene ID for:\n  {scene}\n");
-        let path = download_scene(scene, output_dir, token).await?;
-        eprintln!("\nDownload complete: {}", path.display());
+        let path = download_scene_to(scene, dest, token).await?;
+        eprintln!("\nDownload complete: {path}");
     } else {
         eprintln!(
             "Downloading {} scenes (max {} concurrent)...\n",
@@ -257,7 +267,7 @@ async fn run_download_by_name(
         );
 
         let products: Vec<Product> = build_stub_products(scenes);
-        let results = download_products(&products, output_dir, token, concurrent).await;
+        let results = download_products_to(&products, dest, token, concurrent).await;
         report_batch_results(scenes, &results)?;
     }
 
@@ -266,14 +276,14 @@ async fn run_download_by_name(
 
 async fn run_download_by_id(
     ids: &[String],
-    output_dir: &Path,
+    dest: &copernicus_explorer::OutputDestination,
     concurrent: usize,
     token: &str,
 ) -> Result<(), copernicus_explorer::CopernicusError> {
     if ids.len() == 1 {
         eprintln!("Downloading product by ID:\n  {}\n", ids[0]);
-        let path = download_by_id(&ids[0], output_dir, token).await?;
-        eprintln!("\nDownload complete: {}", path.display());
+        let path = download_by_id_to(&ids[0], dest, token).await?;
+        eprintln!("\nDownload complete: {path}");
     } else {
         eprintln!(
             "Downloading {} products by ID (max {} concurrent)...\n",
@@ -282,7 +292,7 @@ async fn run_download_by_id(
         );
 
         let products: Vec<Product> = build_stub_products_from_ids(ids);
-        let results = download_products(&products, output_dir, token, concurrent).await;
+        let results = download_products_to(&products, dest, token, concurrent).await;
         report_batch_results(ids, &results)?;
     }
 
@@ -291,12 +301,12 @@ async fn run_download_by_id(
 
 fn report_batch_results(
     labels: &[String],
-    results: &[copernicus_explorer::error::Result<PathBuf>],
+    results: &[copernicus_explorer::error::Result<String>],
 ) -> Result<(), copernicus_explorer::CopernicusError> {
     let mut failures = 0;
     for (label, result) in labels.iter().zip(results.iter()) {
         match result {
-            Ok(path) => eprintln!("  OK: {label} -> {}", path.display()),
+            Ok(path) => eprintln!("  OK: {label} -> {path}"),
             Err(e) => {
                 eprintln!("  FAILED: {label} -> {e}");
                 failures += 1;

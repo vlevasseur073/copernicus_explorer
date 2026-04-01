@@ -460,15 +460,29 @@ fn get_access_token_from_env() -> PyResult<String> {
     copernicus_explorer::blocking::get_access_token_from_env().map_err(to_pyerr)
 }
 
-/// Download a Sentinel scene to a local directory.
+/// Download a Sentinel scene to a local directory or S3 bucket.
 ///
-/// Returns the path to the downloaded file.
+/// If `directory` starts with `s3://`, the product is uploaded to S3.
+/// Use `s3_config` to point to a credentials file (rclone-style INI),
+/// or let the library resolve credentials from the default config path
+/// and environment variables.
+///
+/// Returns the path to the downloaded file (or S3 URI).
 #[pyfunction]
-fn download_scene(scene_name: &str, directory: &str, access_token: &str) -> PyResult<String> {
-    let dir = std::path::Path::new(directory);
-    let path = copernicus_explorer::blocking::download_scene(scene_name, dir, access_token)
-        .map_err(to_pyerr)?;
-    Ok(path.to_string_lossy().into_owned())
+#[pyo3(signature = (scene_name, directory, access_token, s3_config=None))]
+fn download_scene(
+    scene_name: &str,
+    directory: &str,
+    access_token: &str,
+    s3_config: Option<&str>,
+) -> PyResult<String> {
+    let dest = copernicus_explorer::parse_output_destination(
+        directory,
+        s3_config.map(std::path::Path::new),
+    )
+    .map_err(to_pyerr)?;
+    copernicus_explorer::blocking::download_scene_to(scene_name, &dest, access_token)
+        .map_err(to_pyerr)
 }
 
 /// Download a Sentinel product by its CDSE UUID.
@@ -477,42 +491,52 @@ fn download_scene(scene_name: &str, directory: &str, access_token: &str) -> PyRe
 /// search), avoiding the extra API call that `download_scene` makes to
 /// resolve a scene name to an ID.
 ///
-/// Returns the path to the downloaded file.
+/// If `directory` starts with `s3://`, the product is uploaded to S3.
+///
+/// Returns the path to the downloaded file (or S3 URI).
 #[pyfunction]
-fn download_by_id(id: &str, directory: &str, access_token: &str) -> PyResult<String> {
-    let dir = std::path::Path::new(directory);
-    let path =
-        copernicus_explorer::blocking::download_by_id(id, dir, access_token).map_err(to_pyerr)?;
-    Ok(path.to_string_lossy().into_owned())
+#[pyo3(signature = (id, directory, access_token, s3_config=None))]
+fn download_by_id(
+    id: &str,
+    directory: &str,
+    access_token: &str,
+    s3_config: Option<&str>,
+) -> PyResult<String> {
+    let dest = copernicus_explorer::parse_output_destination(
+        directory,
+        s3_config.map(std::path::Path::new),
+    )
+    .map_err(to_pyerr)?;
+    copernicus_explorer::blocking::download_by_id_to(id, &dest, access_token).map_err(to_pyerr)
 }
 
 /// Download multiple products concurrently.
 ///
 /// Returns a list of results: each element is either the path to the
-/// downloaded file (str) or None if that download failed.  Errors are
-/// printed to stderr.
+/// downloaded file (or S3 URI) or None if that download failed.  Errors
+/// are printed to stderr.
 ///
-/// # Arguments
-///
-/// * `products` - List of `Product` objects (from `SearchQuery.execute()`)
-/// * `directory` - Directory to save downloaded files
-/// * `access_token` - A valid CDSE access token
-/// * `max_concurrent` - Maximum simultaneous downloads (default: 4)
+/// If `directory` starts with `s3://`, products are uploaded to S3.
 #[pyfunction]
-#[pyo3(signature = (products, directory, access_token, max_concurrent=4))]
+#[pyo3(signature = (products, directory, access_token, max_concurrent=4, s3_config=None))]
 fn download_products(
     products: Vec<PyProduct>,
     directory: &str,
     access_token: &str,
     max_concurrent: usize,
+    s3_config: Option<&str>,
 ) -> PyResult<Vec<Option<String>>> {
     let core_products: Vec<copernicus_explorer::Product> =
         products.iter().map(Into::into).collect();
-    let dir = std::path::Path::new(directory);
+    let dest = copernicus_explorer::parse_output_destination(
+        directory,
+        s3_config.map(std::path::Path::new),
+    )
+    .map_err(to_pyerr)?;
 
-    let results = copernicus_explorer::blocking::download_products(
+    let results = copernicus_explorer::blocking::download_products_to(
         &core_products,
-        dir,
+        &dest,
         access_token,
         max_concurrent,
     );
@@ -521,7 +545,7 @@ fn download_products(
         .into_iter()
         .enumerate()
         .map(|(i, r)| match r {
-            Ok(path) => Some(path.to_string_lossy().into_owned()),
+            Ok(path) => Some(path),
             Err(e) => {
                 eprintln!("  download failed for {}: {e}", products[i].name);
                 None

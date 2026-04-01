@@ -27,6 +27,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Python CLIs.
 - **Python `SearchQuery.geometry_geojson()` method**: set a geometry filter from
   a GeoJSON file path or raw GeoJSON string.
+- **S3 download support**: products can now be downloaded directly to an
+  S3-compatible bucket by passing an `s3://bucket/prefix/` URI as the output
+  directory.
+- **`s3` module**: new `S3Config`, `S3Destination`, `OutputDestination` types
+  and `parse_output_destination()` function in the core library.
+- **S3 credential resolution chain**: `--s3-config <FILE>` flag (or `s3_config`
+  Python kwarg) > default config at `~/.config/copernicus_explorer/s3.conf` >
+  `S3_*` environment variables > `AWS_*` environment variables. Config files use
+  rclone-style INI format with section names matching bucket names.
+- **CLI `--s3-config` flag**: the `download` subcommand now accepts
+  `--s3-config <FILE>` to point to an S3 credentials file. Available in both
+  the Rust and Python CLIs.
+- **`download_scene_to` / `download_by_id_to` / `download_products_to`**: new
+  async functions accepting an `OutputDestination` (local or S3) with
+  corresponding blocking wrappers.
+- **Python `s3_config` kwarg**: `download_scene()`, `download_by_id()`, and
+  `download_products()` now accept an optional `s3_config` keyword argument.
 
 ## [0.2.0] - 2025-03-25
 
