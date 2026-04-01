@@ -45,6 +45,11 @@ pub fn download_scene(scene_name: &str, dir: &Path, access_token: &str) -> Resul
     ))
 }
 
+/// Blocking version of [`crate::download::download_by_id`].
+pub fn download_by_id(id: &str, dir: &Path, access_token: &str) -> Result<PathBuf> {
+    runtime()?.block_on(crate::download::download_by_id(id, dir, access_token))
+}
+
 /// Blocking version of [`crate::download::download_products`].
 pub fn download_products(
     products: &[Product],

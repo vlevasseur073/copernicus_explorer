@@ -24,7 +24,25 @@ const DOWNLOAD_BASE_URL: &str = "https://zipper.dataspace.copernicus.eu/odata/v1
 /// * `access_token` - A valid CDSE access token from `get_access_token`
 pub async fn download_scene(scene_name: &str, dir: &Path, access_token: &str) -> Result<PathBuf> {
     let id = get_scene_id(scene_name).await?;
-    download_by_id(&id, scene_name, dir, access_token, None).await
+    download_by_id_inner(&id, scene_name, dir, access_token, None).await
+}
+
+/// Download a Sentinel product by its CDSE UUID.
+///
+/// Use this when you already have the product ID (e.g. from a previous
+/// search), avoiding the extra API call that [`download_scene`] makes to
+/// resolve a scene name to an ID.
+///
+/// The downloaded filename is derived from the server's `Content-Disposition`
+/// header, falling back to `<id>.zip` if the header is absent.
+///
+/// # Arguments
+///
+/// * `id` - The CDSE product UUID
+/// * `dir` - The directory to save the downloaded file into
+/// * `access_token` - A valid CDSE access token from `get_access_token`
+pub async fn download_by_id(id: &str, dir: &Path, access_token: &str) -> Result<PathBuf> {
+    download_by_id_inner(id, id, dir, access_token, None).await
 }
 
 /// Download multiple products concurrently with a configurable concurrency limit.
@@ -98,22 +116,22 @@ pub async fn download_products(
 }
 
 /// Core download logic: fetch a product by its CDSE UUID and stream to disk.
-async fn download_by_id(
+async fn download_by_id_inner(
     id: &str,
-    scene_name: &str,
+    display_name: &str,
     dir: &Path,
     access_token: &str,
     multi: Option<&MultiProgress>,
 ) -> Result<PathBuf> {
     let client = reqwest::Client::new();
-    download_by_id_with_client(&client, id, scene_name, dir, access_token, multi).await
+    download_by_id_with_client(&client, id, display_name, dir, access_token, multi).await
 }
 
 /// Inner download using a shared `reqwest::Client`.
 async fn download_by_id_with_client(
     client: &reqwest::Client,
     id: &str,
-    scene_name: &str,
+    display_name: &str,
     dir: &Path,
     access_token: &str,
     multi: Option<&MultiProgress>,
@@ -128,7 +146,7 @@ async fn download_by_id_with_client(
 
     if !response.status().is_success() {
         return Err(CopernicusError::DownloadFailed(format!(
-            "{scene_name}: HTTP {status}",
+            "{display_name}: HTTP {status}",
             status = response.status()
         )));
     }
@@ -138,7 +156,7 @@ async fn download_by_id_with_client(
         .get("content-disposition")
         .and_then(|v| v.to_str().ok())
         .and_then(extract_filename)
-        .unwrap_or_else(|| format!("{scene_name}.zip"));
+        .unwrap_or_else(|| format!("{display_name}.zip"));
 
     let output_path = dir.join(&filename);
     let total_size = response.content_length();

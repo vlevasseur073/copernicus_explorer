@@ -62,6 +62,17 @@ path = ce.download_scene(products[0].name, "./data", token)
 print(f"Downloaded to {path}")
 ```
 
+### Download by product ID
+
+If you already have the CDSE product UUID (e.g. from a previous search),
+you can skip the name-to-ID resolution query:
+
+```python
+token = ce.get_access_token_from_env()
+path = ce.download_by_id(products[0].id, "./data", token)
+print(f"Downloaded to {path}")
+```
+
 ### Batch download with concurrency
 
 ```python
@@ -136,10 +147,10 @@ copernicus-explorer search sentinel-2 -p L2A --tile T31TFJ -n 3
 
 ### download
 
-Download one or more scenes by name. Requires authentication.
+Download one or more scenes by name or by CDSE product ID. Requires authentication.
 
 ```bash
-# Single scene
+# Single scene by name
 copernicus-explorer download \
   "S2B_MSIL2A_20260315T105019_N0512_R051_T31TCJ_20260315T144522.SAFE" \
   -o ./data
@@ -149,11 +160,17 @@ copernicus-explorer download \
   "S2B_MSIL2A_20260315T105019_N0512_R051_T31TCJ_20260315T144522.SAFE" \
   "S2A_MSIL2A_20260317T104021_N0512_R008_T31TCJ_20260317T160837.SAFE" \
   -o ./data -j 2
+
+# Download by product UUID (skips the name-to-ID resolution query)
+copernicus-explorer download --id \
+  "a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
+  -o ./data
 ```
 
 | Flag | Description |
 |------|-------------|
-| `SCENES...` | One or more full scene names |
+| `SCENES...` | One or more scene names or product IDs (depending on `--id`) |
+| `--id` | Treat arguments as CDSE product UUIDs instead of scene names |
 | `-o, --output-dir DIR` | Output directory (default: `.`) |
 | `-j, --concurrent N` | Maximum concurrent downloads (default: `4`) |
 | `-u, --user USER` | Username (or set `COPERNICUS_USER`) |
@@ -186,7 +203,8 @@ copernicus-explorer auth -u you@example.com -P yourpassword
 |----------|-------------|
 | `get_access_token(username, password)` | Authenticate and return an access token string |
 | `get_access_token_from_env()` | Authenticate using `COPERNICUS_USER` / `COPERNICUS_PASS` env vars |
-| `download_scene(scene_name, directory, token)` | Download a single scene; returns the output file path |
+| `download_scene(scene_name, directory, token)` | Download a single scene by name; returns the output file path |
+| `download_by_id(id, directory, token)` | Download a single product by CDSE UUID; skips name-to-ID resolution |
 | `download_products(products, directory, token, max_concurrent=4)` | Download multiple products concurrently; returns a list of paths (`None` on failure) |
 | `get_scene_id(scene_name)` | Resolve a scene name to its CDSE UUID |
 | `format_products(products)` | Format a list of products as a table string |

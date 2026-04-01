@@ -445,6 +445,21 @@ fn download_scene(scene_name: &str, directory: &str, access_token: &str) -> PyRe
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Download a Sentinel product by its CDSE UUID.
+///
+/// Use this when you already have the product ID (e.g. from a previous
+/// search), avoiding the extra API call that `download_scene` makes to
+/// resolve a scene name to an ID.
+///
+/// Returns the path to the downloaded file.
+#[pyfunction]
+fn download_by_id(id: &str, directory: &str, access_token: &str) -> PyResult<String> {
+    let dir = std::path::Path::new(directory);
+    let path =
+        copernicus_explorer::blocking::download_by_id(id, dir, access_token).map_err(to_pyerr)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// Download multiple products concurrently.
 ///
 /// Returns a list of results: each element is either the path to the
@@ -573,6 +588,7 @@ fn copernicus_explorer_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_access_token, m)?)?;
     m.add_function(wrap_pyfunction!(get_access_token_from_env, m)?)?;
     m.add_function(wrap_pyfunction!(download_scene, m)?)?;
+    m.add_function(wrap_pyfunction!(download_by_id, m)?)?;
     m.add_function(wrap_pyfunction!(download_products, m)?)?;
     m.add_function(wrap_pyfunction!(get_scene_id, m)?)?;
     m.add_function(wrap_pyfunction!(format_products, m)?)?;

@@ -66,7 +66,7 @@ pub mod search;
 // This lets users write `use copernicus_explorer::Satellite` instead of
 // `use copernicus_explorer::models::Satellite`.
 pub use auth::{get_access_token, get_access_token_from_env};
-pub use download::{download_products, download_scene};
+pub use download::{download_by_id, download_products, download_scene};
 pub use error::CopernicusError;
 pub use geometry::{BoundingBox, Geometry, Point};
 pub use models::{Product, Products, Satellite, format_products, print_products};

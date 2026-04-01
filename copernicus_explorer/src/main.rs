@@ -5,8 +5,8 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use clap::{Parser, Subcommand};
 
 use copernicus_explorer::{
-    BoundingBox, Geometry, Point, Product, Satellite, SearchQuery, download_products,
-    download_scene, get_access_token, get_access_token_from_env, print_products,
+    BoundingBox, Geometry, Point, Product, Satellite, SearchQuery, download_by_id,
+    download_products, download_scene, get_access_token, get_access_token_from_env, print_products,
 };
 
 #[derive(Parser)]
@@ -68,13 +68,21 @@ enum Commands {
         max_results: u32,
     },
 
-    /// Download one or more scenes by name.
+    /// Download one or more scenes by name or by CDSE product ID.
     ///
-    /// Pass multiple scene names to download them concurrently.
+    /// By default the positional arguments are treated as scene names and
+    /// each name is resolved to a CDSE UUID before downloading.  Pass
+    /// `--id` to skip the resolution step and treat the arguments as UUIDs
+    /// directly (useful after a previous search).
     Download {
-        /// Full scene name(s) (e.g. S2B_MSIL2A_20200804T183919_...).
+        /// Scene name(s) or product ID(s) depending on --id.
         #[arg(required = true)]
         scenes: Vec<String>,
+
+        /// Treat the positional arguments as CDSE product UUIDs instead of
+        /// scene names, skipping the name-to-ID resolution query.
+        #[arg(long)]
+        id: bool,
 
         /// Directory to save the downloaded file(s).
         #[arg(short, long, default_value = ".")]
@@ -136,6 +144,7 @@ async fn main() {
         }
         Commands::Download {
             scenes,
+            id,
             output_dir,
             concurrent,
             user,
@@ -143,6 +152,7 @@ async fn main() {
         } => {
             run_download(
                 &scenes,
+                id,
                 &output_dir,
                 concurrent,
                 user.as_deref(),
@@ -206,6 +216,7 @@ async fn run_search(
 
 async fn run_download(
     scenes: &[String],
+    by_id: bool,
     output_dir: &Path,
     concurrent: usize,
     user: Option<&str>,
@@ -213,10 +224,23 @@ async fn run_download(
 ) -> Result<(), copernicus_explorer::CopernicusError> {
     let token = resolve_token(user, pass).await?;
 
+    if by_id {
+        run_download_by_id(scenes, output_dir, concurrent, &token).await
+    } else {
+        run_download_by_name(scenes, output_dir, concurrent, &token).await
+    }
+}
+
+async fn run_download_by_name(
+    scenes: &[String],
+    output_dir: &Path,
+    concurrent: usize,
+    token: &str,
+) -> Result<(), copernicus_explorer::CopernicusError> {
     if scenes.len() == 1 {
         let scene = &scenes[0];
         eprintln!("Resolving scene ID for:\n  {scene}\n");
-        let path = download_scene(scene, output_dir, &token).await?;
+        let path = download_scene(scene, output_dir, token).await?;
         eprintln!("\nDownload complete: {}", path.display());
     } else {
         eprintln!(
@@ -226,29 +250,62 @@ async fn run_download(
         );
 
         let products: Vec<Product> = build_stub_products(scenes);
-        let results = download_products(&products, output_dir, &token, concurrent).await;
+        let results = download_products(&products, output_dir, token, concurrent).await;
+        report_batch_results(scenes, &results)?;
+    }
 
-        let mut failures = 0;
-        for (product, result) in products.iter().zip(results.iter()) {
-            match result {
-                Ok(path) => eprintln!("  OK: {} -> {}", product.name, path.display()),
-                Err(e) => {
-                    eprintln!("  FAILED: {} -> {e}", product.name);
-                    failures += 1;
-                }
-            }
-        }
+    Ok(())
+}
 
+async fn run_download_by_id(
+    ids: &[String],
+    output_dir: &Path,
+    concurrent: usize,
+    token: &str,
+) -> Result<(), copernicus_explorer::CopernicusError> {
+    if ids.len() == 1 {
+        eprintln!("Downloading product by ID:\n  {}\n", ids[0]);
+        let path = download_by_id(&ids[0], output_dir, token).await?;
+        eprintln!("\nDownload complete: {}", path.display());
+    } else {
         eprintln!(
-            "\n{ok} succeeded, {failures} failed.",
-            ok = products.len() - failures,
+            "Downloading {} products by ID (max {} concurrent)...\n",
+            ids.len(),
+            concurrent
         );
 
-        if failures > 0 {
-            return Err(copernicus_explorer::CopernicusError::DownloadFailed(
-                format!("{failures} download(s) failed"),
-            ));
+        let products: Vec<Product> = build_stub_products_from_ids(ids);
+        let results = download_products(&products, output_dir, token, concurrent).await;
+        report_batch_results(ids, &results)?;
+    }
+
+    Ok(())
+}
+
+fn report_batch_results(
+    labels: &[String],
+    results: &[copernicus_explorer::error::Result<PathBuf>],
+) -> Result<(), copernicus_explorer::CopernicusError> {
+    let mut failures = 0;
+    for (label, result) in labels.iter().zip(results.iter()) {
+        match result {
+            Ok(path) => eprintln!("  OK: {label} -> {}", path.display()),
+            Err(e) => {
+                eprintln!("  FAILED: {label} -> {e}");
+                failures += 1;
+            }
         }
+    }
+
+    eprintln!(
+        "\n{ok} succeeded, {failures} failed.",
+        ok = labels.len() - failures,
+    );
+
+    if failures > 0 {
+        return Err(copernicus_explorer::CopernicusError::DownloadFailed(
+            format!("{failures} download(s) failed"),
+        ));
     }
 
     Ok(())
@@ -256,16 +313,31 @@ async fn run_download(
 
 /// Build minimal `Product` stubs from scene names for batch download.
 ///
-/// When downloading by scene name, we need to resolve each name to a
-/// CDSE UUID first.  For a single scene `download_scene` does this
-/// internally.  For batch downloads we resolve all IDs up front so
-/// `download_products` can work directly with UUIDs.
+/// The `id` field is left empty so `download_products` will resolve each
+/// name to a CDSE UUID before downloading.
 fn build_stub_products(scenes: &[String]) -> Vec<Product> {
     scenes
         .iter()
         .map(|name| Product {
             name: name.clone(),
             id: String::new(),
+            acquisition_date: String::new(),
+            publication_date: String::new(),
+            online: true,
+            cloud_cover: None,
+        })
+        .collect()
+}
+
+/// Build `Product` stubs from UUIDs for batch download.
+///
+/// The `id` field is populated so `download_products` skips the
+/// name-to-ID resolution step.
+fn build_stub_products_from_ids(ids: &[String]) -> Vec<Product> {
+    ids.iter()
+        .map(|id| Product {
+            name: String::new(),
+            id: id.clone(),
             acquisition_date: String::new(),
             publication_date: String::new(),
             online: true,

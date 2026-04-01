@@ -16,6 +16,7 @@ from copernicus_explorer_py import (
     Product,
     Satellite,
     SearchQuery,
+    download_by_id,
     download_products,
     download_scene,
     get_access_token,
@@ -132,23 +133,40 @@ def search(
 
 @main.command()
 @click.argument("scenes", nargs=-1, required=True)
+@click.option("--id", "by_id", is_flag=True, default=False, help="Treat arguments as CDSE product UUIDs instead of scene names.")
 @click.option("-o", "--output-dir", default=".", show_default=True, help="Directory to save the downloaded file(s).")
 @click.option("-j", "--concurrent", type=int, default=4, show_default=True, help="Maximum concurrent downloads.")
 @click.option("-u", "--user", default=None, help="Username (reads COPERNICUS_USER env var if omitted).")
 @click.option("-P", "--password", default=None, help="Password (reads COPERNICUS_PASS env var if omitted).")
 def download(
     scenes: tuple[str, ...],
+    by_id: bool,
     output_dir: str,
     concurrent: int,
     user: str | None,
     password: str | None,
 ) -> None:
-    """Download one or more scenes by name.
+    """Download one or more scenes by name or by CDSE product ID.
 
-    Pass multiple scene names to download them concurrently.
+    By default the positional arguments are treated as scene names and
+    each name is resolved to a CDSE UUID before downloading.  Pass --id
+    to skip the resolution step and treat the arguments as UUIDs directly
+    (useful after a previous search).
     """
     token = _resolve_token(user, password)
 
+    if by_id:
+        _download_by_ids(scenes, output_dir, concurrent, token)
+    else:
+        _download_by_names(scenes, output_dir, concurrent, token)
+
+
+def _download_by_names(
+    scenes: tuple[str, ...],
+    output_dir: str,
+    concurrent: int,
+    token: str,
+) -> None:
     if len(scenes) == 1:
         scene = scenes[0]
         click.echo(f"Resolving scene ID for:\n  {scene}\n", err=True)
@@ -164,20 +182,49 @@ def download(
             for s in scenes
         ]
         results = download_products(products, output_dir, token, concurrent)
+        _report_batch_results(scenes, results)
 
-        failures = 0
-        for scene, result in zip(scenes, results):
-            if result is not None:
-                click.echo(f"  OK: {scene} -> {result}", err=True)
-            else:
-                click.echo(f"  FAILED: {scene}", err=True)
-                failures += 1
 
-        ok = len(scenes) - failures
-        click.echo(f"\n{ok} succeeded, {failures} failed.", err=True)
+def _download_by_ids(
+    ids: tuple[str, ...],
+    output_dir: str,
+    concurrent: int,
+    token: str,
+) -> None:
+    if len(ids) == 1:
+        click.echo(f"Downloading product by ID:\n  {ids[0]}\n", err=True)
+        path = download_by_id(ids[0], output_dir, token)
+        click.echo(f"\nDownload complete: {path}", err=True)
+    else:
+        click.echo(
+            f"Downloading {len(ids)} products by ID (max {concurrent} concurrent)...\n",
+            err=True,
+        )
+        products = [
+            Product(name="", id=pid, acquisition_date="", publication_date="", online=True)
+            for pid in ids
+        ]
+        results = download_products(products, output_dir, token, concurrent)
+        _report_batch_results(ids, results)
 
-        if failures > 0:
-            sys.exit(1)
+
+def _report_batch_results(
+    labels: tuple[str, ...] | list[str],
+    results: list[str | None],
+) -> None:
+    failures = 0
+    for label, result in zip(labels, results):
+        if result is not None:
+            click.echo(f"  OK: {label} -> {result}", err=True)
+        else:
+            click.echo(f"  FAILED: {label}", err=True)
+            failures += 1
+
+    ok = len(labels) - failures
+    click.echo(f"\n{ok} succeeded, {failures} failed.", err=True)
+
+    if failures > 0:
+        sys.exit(1)
 
 
 @main.command()
