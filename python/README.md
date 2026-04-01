@@ -13,7 +13,7 @@ compiled speed with no serialization overhead.
 ## Features
 
 - **Search** the CDSE catalogue by satellite, product type, date range, cloud
-  cover, tile ID, point, or bounding box
+  cover, tile ID, point, bounding box, or GeoJSON geometry
 - **Download** scenes by name with Bearer-token authentication
 - **Batch download** multiple products concurrently with configurable parallelism
 - **Authenticate** against the CDSE OAuth2 identity provider
@@ -53,6 +53,23 @@ query.max_results(5)
 products = query.execute()
 ce.print_products(products)
 ```
+
+### Search with a GeoJSON file
+
+```python
+import copernicus_explorer_py as ce
+
+query = ce.SearchQuery(ce.Satellite.sentinel2())
+query.product("L2A")
+query.geometry_geojson("roi.geojson")
+query.max_cloud_cover(30.0)
+query.max_results(5)
+
+products = query.execute()
+ce.print_products(products)
+```
+
+The method also accepts a raw GeoJSON string instead of a file path.
 
 ### Download a single scene
 
@@ -131,6 +148,9 @@ copernicus-explorer search sentinel-1 -p GRD \
 
 # Sentinel-2 by tile, limit to 3 results
 copernicus-explorer search sentinel-2 -p L2A --tile T31TFJ -n 3
+
+# Search using a GeoJSON file as the area of interest
+copernicus-explorer search sentinel-2 -p L2A --geojson roi.geojson -c 30
 ```
 
 | Flag | Description |
@@ -143,6 +163,7 @@ copernicus-explorer search sentinel-2 -p L2A --tile T31TFJ -n 3
 | `-c, --cloud 0-100` | Maximum cloud cover percentage |
 | `--point LAT,LON` | Point geometry (e.g. `43.6,1.44`) |
 | `--bbox TLAT,LLON,BLAT,RLON` | Bounding box (e.g. `47.5,6.0,45.5,11.0`) |
+| `--geojson FILE` | GeoJSON file defining the area of interest |
 | `-n, --max-results N` | Maximum number of results (default: `10`) |
 
 ### download
@@ -192,7 +213,7 @@ copernicus-explorer auth -u you@example.com -P yourpassword
 | Class | Constructor | Key methods / attributes |
 |-------|-------------|--------------------------|
 | `Satellite` | `Satellite.sentinel1()`, `.sentinel2()`, `.sentinel3()`, `.sentinel5p()`, `.sentinel6()` | `.collection_name()`, `.known_products()`, `.is_valid_product(str)` |
-| `SearchQuery` | `SearchQuery(satellite)` | `.product(str)`, `.dates(start, end)`, `.tile(str)`, `.max_cloud_cover(float)`, `.geometry_point(Point)`, `.geometry_bbox(BoundingBox)`, `.max_results(int)`, `.execute()` |
+| `SearchQuery` | `SearchQuery(satellite)` | `.product(str)`, `.dates(start, end)`, `.tile(str)`, `.max_cloud_cover(float)`, `.geometry_point(Point)`, `.geometry_bbox(BoundingBox)`, `.geometry_geojson(str)`, `.max_results(int)`, `.execute()` |
 | `Product` | returned by `SearchQuery.execute()` | `.name`, `.id`, `.acquisition_date`, `.publication_date`, `.online`, `.cloud_cover` |
 | `Point` | `Point(lat, lon)` | `.lat`, `.lon` |
 | `BoundingBox` | `BoundingBox((lat, lon), (lat, lon))` | `.upper_left`, `.lower_right` |

@@ -63,6 +63,10 @@ enum Commands {
         #[arg(long, value_name = "TLAT,LLON,BLAT,RLON")]
         bbox: Option<String>,
 
+        /// Path to a GeoJSON file defining the area of interest.
+        #[arg(long, value_name = "FILE")]
+        geojson: Option<PathBuf>,
+
         /// Maximum number of results.
         #[arg(short = 'n', long, default_value = "10")]
         max_results: u32,
@@ -127,6 +131,7 @@ async fn main() {
             cloud,
             point,
             bbox,
+            geojson,
             max_results,
         } => {
             run_search(
@@ -138,6 +143,7 @@ async fn main() {
                 cloud,
                 point,
                 bbox,
+                geojson,
                 max_results,
             )
             .await
@@ -179,6 +185,7 @@ async fn run_search(
     cloud: Option<f64>,
     point: Option<String>,
     bbox: Option<String>,
+    geojson: Option<PathBuf>,
     max_results: u32,
 ) -> Result<(), copernicus_explorer::CopernicusError> {
     let mut query = SearchQuery::new(satellite);
@@ -198,7 +205,7 @@ async fn run_search(
         query = query.max_cloud_cover(c);
     }
 
-    if let Some(geom) = parse_geometry(point.as_deref(), bbox.as_deref())? {
+    if let Some(geom) = parse_geometry(point.as_deref(), bbox.as_deref(), geojson.as_deref())? {
         query = query.geometry(geom);
     }
 
@@ -399,11 +406,19 @@ fn parse_date(s: &str) -> Result<DateTime<Utc>, copernicus_explorer::CopernicusE
         })
 }
 
-/// Parse --point or --bbox into a Geometry.
+/// Parse --point, --bbox, or --geojson into a Geometry.
 fn parse_geometry(
     point: Option<&str>,
     bbox: Option<&str>,
+    geojson: Option<&Path>,
 ) -> Result<Option<Geometry>, copernicus_explorer::CopernicusError> {
+    let provided = point.is_some() as u8 + bbox.is_some() as u8 + geojson.is_some() as u8;
+    if provided > 1 {
+        return Err(copernicus_explorer::CopernicusError::InvalidArgument(
+            "--point, --bbox, and --geojson are mutually exclusive".into(),
+        ));
+    }
+
     if let Some(p) = point {
         let parts: Vec<f64> = p
             .split(',')
@@ -447,6 +462,10 @@ fn parse_geometry(
             (parts[0], parts[1]),
             (parts[2], parts[3]),
         ))));
+    }
+
+    if let Some(path) = geojson {
+        return Ok(Some(Geometry::from_geojson_file(path)?));
     }
 
     Ok(None)

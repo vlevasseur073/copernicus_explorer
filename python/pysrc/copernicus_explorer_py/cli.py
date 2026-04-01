@@ -74,6 +74,7 @@ def main() -> None:
 @click.option("-c", "--cloud", type=float, default=None, help="Maximum cloud cover % (0-100).")
 @click.option("--point", default=None, metavar="LAT,LON", help="Point geometry (e.g. 43.6,1.44).")
 @click.option("--bbox", default=None, metavar="TLAT,LLON,BLAT,RLON", help="Bounding box geometry.")
+@click.option("--geojson", default=None, type=click.Path(exists=True), help="GeoJSON file defining the area of interest.")
 @click.option("-n", "--max-results", type=int, default=10, show_default=True, help="Maximum number of results.")
 def search(
     satellite: str,
@@ -84,9 +85,14 @@ def search(
     cloud: float | None,
     point: str | None,
     bbox: str | None,
+    geojson: str | None,
     max_results: int,
 ) -> None:
     """Search the CDSE catalogue for satellite products."""
+    geo_count = sum(x is not None for x in (point, bbox, geojson))
+    if geo_count > 1:
+        raise click.UsageError("--point, --bbox, and --geojson are mutually exclusive.")
+
     sat_factory = SATELLITES[satellite]
     query = SearchQuery(sat_factory())
 
@@ -119,6 +125,8 @@ def search(
         query.geometry_bbox(
             BoundingBox((parts[0], parts[1]), (parts[2], parts[3]))
         )
+    elif geojson:
+        query.geometry_geojson(geojson)
 
     query.max_results(max_results)
 

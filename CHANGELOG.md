@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Download by ID**: new `download_by_id()` function (async + blocking) downloads
+  a product directly by its CDSE UUID, skipping the name-to-ID resolution query.
+  Useful when the ID is already known from a previous search.
+- **CLI `--id` flag**: the `download` subcommand now accepts `--id` to treat
+  positional arguments as product UUIDs instead of scene names. Available in
+  both the Rust and Python CLIs.
+- **Python `download_by_id()` binding**: new function exposed in the Python
+  package for direct download by UUID.
+- **Dedicated Python README**: PyPI now displays a Python-specific README with
+  installation via `pip install`, Python API reference, and CLI usage.
+- **GeoJSON geometry support**: new `Polygon` type and `Geometry::from_geojson` /
+  `Geometry::from_geojson_file` constructors for loading spatial filters from
+  GeoJSON (Point, Polygon, Feature, FeatureCollection).
+- **CLI `--geojson` flag**: the `search` subcommand now accepts `--geojson <FILE>`
+  as an alternative to `--point` or `--bbox`. Available in both the Rust and
+  Python CLIs.
+- **Python `SearchQuery.geometry_geojson()` method**: set a geometry filter from
+  a GeoJSON file path or raw GeoJSON string.
+
 ## [0.2.0] - 2025-03-25
 
 ### Added

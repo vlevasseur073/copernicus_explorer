@@ -8,7 +8,7 @@ A Rust client for browsing and downloading Sentinel satellite products from the
 ## Features
 
 - **Search** the CDSE catalogue by satellite, product type, date range, cloud
-  cover, tile ID, point, or bounding box
+  cover, tile ID, point, bounding box, or GeoJSON geometry
 - **Download** scenes by name with Bearer-token authentication
 - **Batch download** multiple products concurrently with configurable parallelism
 - **Authenticate** against the CDSE OAuth2 identity provider
@@ -38,7 +38,7 @@ copernicus_explorer/       Cargo workspace root
       main.rs              CLI binary (clap)
       error.rs             CopernicusError enum (thiserror)
       models.rs            Satellite enum, Product struct (serde)
-      geometry.rs          Point, BoundingBox, WKT conversion
+      geometry.rs          Point, BoundingBox, Polygon, GeoJSON parsing, WKT conversion
       auth.rs              OAuth2 token retrieval (reqwest, async)
       search.rs            SearchQuery builder, OData filter construction (async)
       download.rs          Single & batch download with streaming I/O + progress bars (async)
@@ -91,6 +91,9 @@ copernicus_explorer search sentinel-1 -p GRD \
 
 # Sentinel-2 by tile, limit to 3 results
 copernicus_explorer search sentinel-2 -p L2A --tile T31TFJ -n 3
+
+# Search using a GeoJSON file as the area of interest
+copernicus_explorer search sentinel-2 -p L2A --geojson roi.geojson -c 30
 ```
 
 **Options:**
@@ -105,6 +108,7 @@ copernicus_explorer search sentinel-2 -p L2A --tile T31TFJ -n 3
 | `-c, --cloud <0-100>` | Maximum cloud cover percentage |
 | `--point <LAT,LON>` | Point geometry (e.g. `43.6,1.44`) |
 | `--bbox <TLAT,LLON,BLAT,RLON>` | Bounding box (e.g. `47.5,6.0,45.5,11.0`) |
+| `--geojson <FILE>` | GeoJSON file defining the area of interest |
 | `-n, --max-results <N>` | Maximum number of results (default: `10`) |
 
 ### auth
@@ -302,7 +306,7 @@ More examples can be found in [python examples](python/examples)
 | Class | Constructor | Key methods / attributes |
 |-------|-------------|--------------------------|
 | `Satellite` | `Satellite.sentinel1()`, `.sentinel2()`, `.sentinel3()`, `.sentinel5p()`, `.sentinel6()` | `.collection_name()`, `.known_products()`, `.is_valid_product(str)` |
-| `SearchQuery` | `SearchQuery(satellite)` | `.product(str)`, `.dates(start, end)`, `.tile(str)`, `.max_cloud_cover(float)`, `.geometry_point(Point)`, `.geometry_bbox(BoundingBox)`, `.max_results(int)`, `.execute()` |
+| `SearchQuery` | `SearchQuery(satellite)` | `.product(str)`, `.dates(start, end)`, `.tile(str)`, `.max_cloud_cover(float)`, `.geometry_point(Point)`, `.geometry_bbox(BoundingBox)`, `.geometry_geojson(str)`, `.max_results(int)`, `.execute()` |
 | `Product` | returned by `SearchQuery.execute()` | `.name`, `.id`, `.acquisition_date`, `.publication_date`, `.online`, `.cloud_cover` |
 | `Point` | `Point(lat, lon)` | `.lat`, `.lon` |
 | `BoundingBox` | `BoundingBox((lat, lon), (lat, lon))` | `.upper_left`, `.lower_right` |

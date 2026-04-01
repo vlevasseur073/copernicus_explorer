@@ -68,6 +68,6 @@ pub mod search;
 pub use auth::{get_access_token, get_access_token_from_env};
 pub use download::{download_by_id, download_products, download_scene};
 pub use error::CopernicusError;
-pub use geometry::{BoundingBox, Geometry, Point};
+pub use geometry::{BoundingBox, Geometry, Point, Polygon};
 pub use models::{Product, Products, Satellite, format_products, print_products};
 pub use search::{SearchQuery, get_scene_id};

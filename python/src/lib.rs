@@ -295,6 +295,7 @@ struct PySearchQuery {
     max_cloud_cover: Option<f64>,
     point: Option<(f64, f64)>,
     bbox: Option<((f64, f64), (f64, f64))>,
+    geojson: Option<String>,
     max_results: u32,
 }
 
@@ -311,6 +312,7 @@ impl PySearchQuery {
             max_cloud_cover: None,
             point: None,
             bbox: None,
+            geojson: None,
             max_results: 100,
         }
     }
@@ -347,6 +349,7 @@ impl PySearchQuery {
     fn geometry_point(&mut self, point: &PyPoint) -> Self {
         self.point = Some((point.lat, point.lon));
         self.bbox = None;
+        self.geojson = None;
         self.clone()
     }
 
@@ -354,6 +357,19 @@ impl PySearchQuery {
     fn geometry_bbox(&mut self, bbox: &PyBoundingBox) -> Self {
         self.bbox = Some((bbox.upper_left, bbox.lower_right));
         self.point = None;
+        self.geojson = None;
+        self.clone()
+    }
+
+    /// Set a geometry filter from a GeoJSON file path or GeoJSON string.
+    ///
+    /// Accepts either a path to a `.geojson` / `.json` file, or a raw
+    /// GeoJSON string.  Supports Point, Polygon, Feature, and
+    /// FeatureCollection types.
+    fn geometry_geojson(&mut self, geojson: &str) -> Self {
+        self.geojson = Some(geojson.to_string());
+        self.point = None;
+        self.bbox = None;
         self.clone()
     }
 
@@ -399,6 +415,16 @@ impl PySearchQuery {
             let geom = copernicus_explorer::Geometry::BoundingBox(
                 copernicus_explorer::BoundingBox::new(ul, lr),
             );
+            query = query.geometry(geom);
+        }
+
+        if let Some(ref gj) = self.geojson {
+            let path = std::path::Path::new(gj);
+            let geom = if path.exists() {
+                copernicus_explorer::Geometry::from_geojson_file(path).map_err(to_pyerr)?
+            } else {
+                copernicus_explorer::Geometry::from_geojson(gj).map_err(to_pyerr)?
+            };
             query = query.geometry(geom);
         }
 
