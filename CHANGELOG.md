@@ -5,9 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.3.0] - 2025-04-01
+## Release 0.3.x
 
-### Added
+### [0.3.1] - 2025-04-01
+
+#### Fixes
+- Python package 0.3.0 could not be installed because of an issue with the README file.
+  Patch 0.3.1 fixes it.
+
+### [0.3.0] - 2025-04-01
+
+#### Added
 
 - **Download by ID**: new `download_by_id()` function (async + blocking) downloads
   a product directly by its CDSE UUID, skipping the name-to-ID resolution query.
@@ -45,9 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Python `s3_config` kwarg**: `download_scene()`, `download_by_id()`, and
   `download_products()` now accept an optional `s3_config` keyword argument.
 
-## [0.2.0] - 2025-03-25
+## Release 0.2.x
 
-### Added
+### [0.2.0] - 2025-03-25
+
+#### Added
 
 - **Batch download**: new `download_products()` function downloads multiple
   products concurrently with configurable parallelism via
@@ -69,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Interactive examples (`test_rust_api.rs`, `test_python_api.py`) now offer an
   "all" option to demonstrate concurrent batch download of search results.
 
-### Changed
+#### Changed
 
 - **reqwest** switched from `blocking` feature to async client with `stream`
   feature for non-blocking response body streaming.
@@ -81,14 +91,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Download streaming** uses `tokio::fs::File` + `AsyncWriteExt` and
   `reqwest::Response::bytes_stream()` instead of `std::io::Read` chunking.
 
-### Removed
+#### Removed
 
 - Direct dependency on `reqwest`'s `blocking` feature (replaced by the
   library's own `blocking` module backed by a tokio runtime).
 
-## [0.1.1] - 2025-03-14
+## Release 0.1.x
 
-### Added
+### [0.1.1] - 2025-03-14
+
+#### Added
 
 - Publication to crates.io and PyPI triggered by tag release.
 - Centralized workspace version in root `Cargo.toml`.
@@ -97,13 +109,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - GitHub Actions CI/CD workflow.
 - Documentation badge in README.
 
-### Fixed
+#### Fixed
 
 - Syntax error for the `tileId` attribute in CDSE OData filter.
 
-## [0.1.0] - 2025-03-13
+### [0.1.0] - 2025-03-13
 
-### Added
+#### Added
 
 - Initial release.
 - Search the CDSE catalogue by satellite, product type, date range, cloud
