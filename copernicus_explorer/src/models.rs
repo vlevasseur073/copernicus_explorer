@@ -18,7 +18,7 @@ use serde::Deserialize;
 /// attribute controls the exact string the user types on the CLI.
 /// Without it, clap would use the variant name in kebab-case
 /// (e.g. `sentinel1`).
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq)]
 pub enum Satellite {
     #[value(name = "sentinel-1")]
     Sentinel1,

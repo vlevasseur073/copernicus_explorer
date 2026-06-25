@@ -2,6 +2,7 @@
 members = [
     "copernicus_explorer",
     "python",
+    "gui",
 ]
 resolver = "3"
 
