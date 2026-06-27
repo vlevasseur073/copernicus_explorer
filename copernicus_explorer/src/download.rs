@@ -13,6 +13,17 @@ use crate::search::get_scene_id;
 
 const DOWNLOAD_BASE_URL: &str = "https://zipper.dataspace.copernicus.eu/odata/v1/Products";
 
+/// Progress events emitted during a download.
+#[derive(Clone, Debug)]
+pub enum DownloadProgressEvent {
+    Started { label: String, total: Option<u64> },
+    Progress { downloaded: u64 },
+    Completed { path: String },
+    Failed { message: String },
+}
+
+pub type DownloadProgressCallback = Arc<dyn Fn(DownloadProgressEvent) + Send + Sync>;
+
 // ---------------------------------------------------------------------------
 // Public API — local filesystem (backward-compatible)
 // ---------------------------------------------------------------------------
@@ -28,6 +39,7 @@ pub async fn download_scene(scene_name: &str, dir: &Path, access_token: &str) ->
         scene_name,
         &OutputDestination::Local(dir.to_path_buf()),
         access_token,
+        None,
         None,
     )
     .await
@@ -45,6 +57,7 @@ pub async fn download_by_id(id: &str, dir: &Path, access_token: &str) -> Result<
         id,
         &OutputDestination::Local(dir.to_path_buf()),
         access_token,
+        None,
         None,
     )
     .await
@@ -85,7 +98,7 @@ pub async fn download_scene_to(
     access_token: &str,
 ) -> Result<String> {
     let id = get_scene_id(scene_name).await?;
-    download_by_id_inner(&id, scene_name, dest, access_token, None).await
+    download_by_id_inner(&id, scene_name, dest, access_token, None, None).await
 }
 
 /// Download a product by CDSE UUID to an arbitrary destination.
@@ -94,7 +107,17 @@ pub async fn download_by_id_to(
     dest: &OutputDestination,
     access_token: &str,
 ) -> Result<String> {
-    download_by_id_inner(id, id, dest, access_token, None).await
+    download_by_id_inner(id, id, dest, access_token, None, None).await
+}
+
+/// Download a product by CDSE UUID, reporting progress through a callback.
+pub async fn download_by_id_to_with_progress(
+    id: &str,
+    dest: &OutputDestination,
+    access_token: &str,
+    progress: DownloadProgressCallback,
+) -> Result<String> {
+    download_by_id_inner(id, id, dest, access_token, None, Some(progress)).await
 }
 
 /// Download multiple products to an arbitrary destination.
@@ -131,7 +154,8 @@ pub async fn download_products_to(
                 id
             };
 
-            download_by_id_with_client(&cl, &resolved_id, &name, &dest, &token, Some(&mp)).await
+            download_by_id_with_client(&cl, &resolved_id, &name, &dest, &token, Some(&mp), None)
+                .await
         });
 
         handles.push(handle);
@@ -159,9 +183,19 @@ async fn download_by_id_inner(
     dest: &OutputDestination,
     access_token: &str,
     multi: Option<&MultiProgress>,
+    progress: Option<DownloadProgressCallback>,
 ) -> Result<String> {
     let client = reqwest::Client::new();
-    download_by_id_with_client(&client, id, display_name, dest, access_token, multi).await
+    download_by_id_with_client(
+        &client,
+        id,
+        display_name,
+        dest,
+        access_token,
+        multi,
+        progress,
+    )
+    .await
 }
 
 /// Inner download using a shared `reqwest::Client`.
@@ -172,6 +206,7 @@ async fn download_by_id_with_client(
     dest: &OutputDestination,
     access_token: &str,
     multi: Option<&MultiProgress>,
+    progress: Option<DownloadProgressCallback>,
 ) -> Result<String> {
     let url = format!("{DOWNLOAD_BASE_URL}({id})/$value");
 
@@ -182,10 +217,13 @@ async fn download_by_id_with_client(
         .await?;
 
     if !response.status().is_success() {
-        return Err(CopernicusError::DownloadFailed(format!(
-            "{display_name}: HTTP {status}",
-            status = response.status()
-        )));
+        let message = format!("{display_name}: HTTP {status}", status = response.status());
+        if let Some(progress) = &progress {
+            progress(DownloadProgressEvent::Failed {
+                message: message.clone(),
+            });
+        }
+        return Err(CopernicusError::DownloadFailed(message));
     }
 
     let filename = response
@@ -197,27 +235,75 @@ async fn download_by_id_with_client(
 
     let total_size = response.content_length();
 
-    let pb = create_progress_bar(&filename, total_size);
-    let pb = match multi {
-        Some(mp) => mp.add(pb),
-        None => pb,
+    let terminal_bar = if progress.is_none() {
+        let pb = create_progress_bar(&filename, total_size);
+        Some(match multi {
+            Some(mp) => mp.add(pb),
+            None => pb,
+        })
+    } else {
+        if let Some(progress) = &progress {
+            progress(DownloadProgressEvent::Started {
+                label: filename.clone(),
+                total: total_size,
+            });
+        }
+        None
     };
 
     let result = match dest {
-        OutputDestination::Local(dir) => write_to_local(dir, &filename, response, &pb).await?,
-        OutputDestination::S3(s3dest) => write_to_s3(s3dest, &filename, response, &pb).await?,
+        OutputDestination::Local(dir) => {
+            write_to_local(
+                dir,
+                &filename,
+                response,
+                terminal_bar.as_ref(),
+                progress.as_ref(),
+            )
+            .await
+        }
+        OutputDestination::S3(s3dest) => {
+            write_to_s3(
+                s3dest,
+                &filename,
+                response,
+                terminal_bar.as_ref(),
+                progress.as_ref(),
+            )
+            .await
+        }
     };
 
-    pb.finish_with_message(format!("saved to {result}"));
+    match &result {
+        Ok(path) => {
+            if let Some(pb) = &terminal_bar {
+                pb.finish_with_message(format!("saved to {path}"));
+            }
+            if let Some(progress) = &progress {
+                progress(DownloadProgressEvent::Completed { path: path.clone() });
+            }
+        }
+        Err(error) => {
+            if let Some(pb) = &terminal_bar {
+                pb.abandon_with_message(error.to_string());
+            }
+            if let Some(progress) = &progress {
+                progress(DownloadProgressEvent::Failed {
+                    message: error.to_string(),
+                });
+            }
+        }
+    }
 
-    Ok(result)
+    result
 }
 
 async fn write_to_local(
     dir: &Path,
     filename: &str,
     response: reqwest::Response,
-    pb: &ProgressBar,
+    pb: Option<&ProgressBar>,
+    progress: Option<&DownloadProgressCallback>,
 ) -> Result<String> {
     let output_path = dir.join(filename);
     let mut file = tokio::fs::File::create(&output_path).await?;
@@ -228,7 +314,7 @@ async fn write_to_local(
         let chunk = chunk?;
         file.write_all(&chunk).await?;
         downloaded += chunk.len() as u64;
-        pb.set_position(downloaded);
+        report_download_progress(downloaded, pb, progress);
     }
 
     Ok(output_path.to_string_lossy().into_owned())
@@ -238,7 +324,8 @@ async fn write_to_s3(
     s3dest: &S3Destination,
     filename: &str,
     response: reqwest::Response,
-    pb: &ProgressBar,
+    pb: Option<&ProgressBar>,
+    progress: Option<&DownloadProgressCallback>,
 ) -> Result<String> {
     let mut stream = response.bytes_stream();
     let mut buffer = Vec::new();
@@ -247,12 +334,25 @@ async fn write_to_s3(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         downloaded += chunk.len() as u64;
-        pb.set_position(downloaded);
+        report_download_progress(downloaded, pb, progress);
         buffer.extend_from_slice(&chunk);
     }
 
     let mut cursor = std::io::Cursor::new(buffer);
     s3dest.upload(&mut cursor, filename).await
+}
+
+fn report_download_progress(
+    downloaded: u64,
+    pb: Option<&ProgressBar>,
+    progress: Option<&DownloadProgressCallback>,
+) {
+    if let Some(pb) = pb {
+        pb.set_position(downloaded);
+    }
+    if let Some(progress) = progress {
+        progress(DownloadProgressEvent::Progress { downloaded });
+    }
 }
 
 /// Create a progress bar appropriate for the download.

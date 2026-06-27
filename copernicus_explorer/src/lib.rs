@@ -68,7 +68,8 @@ pub mod search;
 // `use copernicus_explorer::models::Satellite`.
 pub use auth::{get_access_token, get_access_token_from_env};
 pub use download::{
-    download_by_id, download_by_id_to, download_products, download_products_to, download_scene,
+    DownloadProgressCallback, DownloadProgressEvent, download_by_id, download_by_id_to,
+    download_by_id_to_with_progress, download_products, download_products_to, download_scene,
     download_scene_to,
 };
 pub use error::CopernicusError;

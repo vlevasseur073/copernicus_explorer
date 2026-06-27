@@ -1,8 +1,27 @@
 use chrono::{Duration, Utc};
-use copernicus_explorer::{Product, Satellite, SearchQuery};
+use copernicus_explorer::{
+    download_by_id_to_with_progress, get_access_token_from_env, DownloadProgressCallback,
+    DownloadProgressEvent, OutputDestination, Product, Satellite, SearchQuery,
+};
 use eframe::egui;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tokio::runtime::Runtime;
+
+#[derive(Clone, Debug)]
+enum DownloadUiStatus {
+    Downloading,
+    Completed(String),
+    Failed(String),
+}
+
+#[derive(Clone, Debug)]
+struct DownloadState {
+    label: String,
+    downloaded: u64,
+    total: Option<u64>,
+    status: DownloadUiStatus,
+}
 
 struct CopernicusExplorerApp {
     satellite: Satellite,
@@ -17,6 +36,7 @@ struct CopernicusExplorerApp {
     geojson: String,
     max_results: u32,
     products: Vec<Product>,
+    downloads: Arc<Mutex<HashMap<String, DownloadState>>>,
     runtime: Arc<Runtime>,
 }
 
@@ -38,6 +58,7 @@ impl Default for CopernicusExplorerApp {
             geojson: String::new(),
             max_results: 10,
             products: Vec::new(),
+            downloads: Arc::new(Mutex::new(HashMap::new())),
             runtime: Arc::new(Runtime::new().expect("Failed to create Tokio runtime")),
         }
     }
@@ -117,15 +138,69 @@ impl CopernicusExplorerApp {
         self.products = products;
     }
 
-    fn download_product(&self, product: &Product) {
+    fn download_product(&self, product: &Product, ctx: &egui::Context) {
         let runtime = self.runtime.clone();
         let product_id = product.id.clone();
+        let product_name = product.name.clone();
+        let downloads = self.downloads.clone();
+        let ctx = ctx.clone();
+
+        {
+            let mut map = downloads.lock().unwrap();
+            map.insert(
+                product_id.clone(),
+                DownloadState {
+                    label: product_name.clone(),
+                    downloaded: 0,
+                    total: None,
+                    status: DownloadUiStatus::Downloading,
+                },
+            );
+        }
+
+        let progress_id = product_id.clone();
+        let progress: DownloadProgressCallback = Arc::new(move |event| {
+            let mut map = downloads.lock().unwrap();
+            let state = map
+                .entry(progress_id.clone())
+                .or_insert_with(|| DownloadState {
+                    label: product_name.clone(),
+                    downloaded: 0,
+                    total: None,
+                    status: DownloadUiStatus::Downloading,
+                });
+
+            match event {
+                DownloadProgressEvent::Started { label, total } => {
+                    state.label = label;
+                    state.total = total;
+                    state.status = DownloadUiStatus::Downloading;
+                }
+                DownloadProgressEvent::Progress { downloaded } => {
+                    state.downloaded = downloaded;
+                }
+                DownloadProgressEvent::Completed { path } => {
+                    state.status = DownloadUiStatus::Completed(path);
+                }
+                DownloadProgressEvent::Failed { message } => {
+                    state.status = DownloadUiStatus::Failed(message);
+                }
+            }
+            ctx.request_repaint();
+        });
+
         runtime.spawn(async move {
-            let token = copernicus_explorer::get_access_token_from_env()
-                .await
-                .unwrap();
-            let dest = copernicus_explorer::OutputDestination::Local(".".into());
-            let _ = copernicus_explorer::download_by_id_to(&product_id, &dest, &token).await;
+            let token = match get_access_token_from_env().await {
+                Ok(token) => token,
+                Err(error) => {
+                    progress(DownloadProgressEvent::Failed {
+                        message: error.to_string(),
+                    });
+                    return;
+                }
+            };
+            let dest = OutputDestination::Local(".".into());
+            let _ = download_by_id_to_with_progress(&product_id, &dest, &token, progress).await;
         });
     }
 
@@ -239,18 +314,75 @@ impl eframe::App for CopernicusExplorerApp {
             ui.separator();
 
             egui::ScrollArea::vertical().show(ui, |ui| {
+                let download_states = self.downloads.lock().unwrap().clone();
                 for product in &self.products {
-                    ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
                         ui.label(&product.name);
-                        ui.push_id(&product.id, |ui| {
-                            if ui.button("Download").clicked() {
-                                self.download_product(product);
+                        if let Some(state) = download_states.get(&product.id) {
+                            match &state.status {
+                                DownloadUiStatus::Downloading => {
+                                    let progress_text = if let Some(total) =
+                                        state.total.filter(|total| *total > 0)
+                                    {
+                                        let fraction = state.downloaded as f32 / total as f32;
+                                        format!(
+                                            "{} / {} ({:.0}%)",
+                                            format_bytes(state.downloaded),
+                                            format_bytes(total),
+                                            fraction * 100.0
+                                        )
+                                    } else {
+                                        format!("{} downloaded", format_bytes(state.downloaded))
+                                    };
+                                    let progress_bar = if let Some(total) =
+                                        state.total.filter(|total| *total > 0)
+                                    {
+                                        egui::ProgressBar::new(
+                                            (state.downloaded as f32 / total as f32)
+                                                .clamp(0.0, 1.0),
+                                        )
+                                    } else {
+                                        egui::ProgressBar::new(0.0).animate(true)
+                                    };
+                                    ui.add(progress_bar.text(progress_text));
+                                }
+                                DownloadUiStatus::Completed(path) => {
+                                    ui.colored_label(
+                                        egui::Color32::from_rgb(80, 180, 80),
+                                        format!("Saved to {path}"),
+                                    );
+                                }
+                                DownloadUiStatus::Failed(message) => {
+                                    ui.colored_label(egui::Color32::RED, message);
+                                }
                             }
-                        });
+                        } else {
+                            ui.push_id(&product.id, |ui| {
+                                if ui.button("Download").clicked() {
+                                    self.download_product(product, ctx);
+                                }
+                            });
+                        }
                     });
+                    ui.add_space(4.0);
                 }
             });
         });
+    }
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut size = bytes as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{} {}", bytes, UNITS[0])
+    } else {
+        format!("{size:.1} {}", UNITS[unit])
     }
 }
 
