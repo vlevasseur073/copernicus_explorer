@@ -12,7 +12,7 @@ use copernicus_explorer::{
 
 #[derive(Parser)]
 #[command(
-    name = "copernicus-explorer",
+    name = "copernicus-explorer-cli",
     version,
     about = "Browse and download Sentinel products from the Copernicus Data Space Ecosystem (CDSE)"
 )]
@@ -23,7 +23,7 @@ struct Cli {
 
 /// Each variant of this enum becomes a subcommand (e.g. `search`, `download`).
 ///
-/// Clap maps `Commands::Search { ... }` to `copernicus-explorer search ...`
+/// Clap maps `Commands::Search { ... }` to `copernicus-explorer-cli search ...`
 /// on the command line.  The fields of each variant become that subcommand's
 /// arguments and flags.
 #[derive(Subcommand)]

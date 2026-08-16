@@ -17,8 +17,8 @@ A Rust client for browsing and downloading Sentinel satellite products from the
 - Supports Sentinel-1, Sentinel-2, Sentinel-3, Sentinel-5P, and Sentinel-6
 - **Async-first** design (tokio) with synchronous `blocking` wrappers
 - **Download progress callbacks** for embedding progress reporting in custom UIs
-- Usable as a **Rust library**, a **CLI**, a **desktop GUI** (egui), or from
-  **Python** via native bindings
+- Usable as a **Rust library**, a **CLI**, a **desktop GUI** (egui), a
+  **terminal UI** (ratatui), or from **Python** via native bindings
 
 ## Prerequisites
 
@@ -35,11 +35,14 @@ The repository is a Cargo workspace with three members:
 ```
 copernicus_explorer/       Cargo workspace root
   Cargo.toml               Workspace manifest
-  copernicus_explorer/     Core Rust library + CLI binary
+  copernicus_explorer/     Core Rust library + TUI/CLI binaries
     Cargo.toml
     src/
       lib.rs               Module declarations and re-exports
-      main.rs              CLI binary (clap)
+      tui/                 Terminal UI (ratatui / crossterm)
+      bin/
+        copernicus_explorer.rs      Default binary: interactive TUI
+        copernicus_explorer_cli.rs  Click-style CLI (clap)
       error.rs             CopernicusError enum (thiserror)
       models.rs            Satellite enum, Product struct (serde)
       geometry.rs          Point, BoundingBox, Polygon, GeoJSON parsing, WKT conversion
@@ -68,10 +71,15 @@ copernicus_explorer/       Cargo workspace root
 ```bash
 git clone <repo-url>
 cd copernicus_explorer
-cargo build --release
+cargo build --release -p copernicus_explorer
 ```
 
-The CLI binary is produced at `target/release/copernicus_explorer`.
+Binaries:
+
+| Binary | Path | Role |
+|--------|------|------|
+| `copernicus_explorer` | `target/release/copernicus_explorer` | Interactive TUI (default) |
+| `copernicus_explorer_cli` | `target/release/copernicus_explorer_cli` | CLI (`search` / `download` / `auth`) |
 
 Build the GUI with:
 
@@ -98,10 +106,52 @@ point, bounding box, and GeoJSON path filters. Search results can be downloaded
 individually with per-product progress bars. Downloaded files are written to the
 current working directory.
 
+## Terminal UI
+
+A keyboard-driven multi-pane terminal UI (lazygit/gitui style) for interactive
+search and download. This is the default `copernicus_explorer` binary:
+
+```bash
+# Requires COPERNICUS_USER / COPERNICUS_PASS for downloads
+export COPERNICUS_USER="you@example.com"
+export COPERNICUS_PASS="yourpassword"
+
+cargo run --release -p copernicus_explorer
+```
+
+**Layout:** filters (left), results table (right), downloads with progress
+(bottom), status line and keybinding hints (footer).
+
+**Keybindings:**
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `Shift-Tab` / `Esc` | Cycle panes (Esc leaves Downloads → Results → Filters) |
+| `Alt`+`←`/`→`/`↑`/`↓` | Cycle panes (Alt+Right/Down next, Alt+Left/Up previous) |
+| `↑`/`↓` or `j`/`k` | Move selection / filter field |
+| `←`/`→` | Cycle satellite or product type |
+| `Enter` / `e` | Edit text filter (or cycle sat/product) |
+| `s` | Search (replace results) |
+| `S` | Append search (extend results, skip duplicates) |
+| `Space` | Mark / unmark result for batch download |
+| `d` / `Enter` | Download marked results (or the highlighted row) |
+| `a` | Download all search results concurrently |
+| `q` / `Ctrl-c` | Quit |
+
+Filters cover satellite, product type, date range, tile ID, cloud cover, point,
+bounding box, GeoJSON path, and max results. Downloads run asynchronously in the
+background (up to 4 concurrent) with live progress gauges — focus stays on the
+Results pane so you can keep browsing and queue more. Successfully downloaded
+products are marked with `✓` (green) for the rest of the session. Files are
+written to the current working directory.
+
 ## CLI usage
 
+The scripting CLI binary is `copernicus_explorer_cli` (the default
+`copernicus_explorer` binary launches the TUI):
+
 ```
-copernicus_explorer <COMMAND>
+copernicus_explorer_cli <COMMAND>
 
 Commands:
   search    Search the CDSE catalogue for satellite products
@@ -116,18 +166,18 @@ Search the catalogue. Dates default to the last 30 days if omitted.
 
 ```bash
 # Sentinel-2 L2A near Toulouse, max 30% cloud cover
-copernicus_explorer search sentinel-2 -p L2A --point 43.6,1.44 -c 30
+copernicus_explorer_cli search sentinel-2 -p L2A --point 43.6,1.44 -c 30
 
 # Sentinel-1 GRD over the Alps with explicit date range
-copernicus_explorer search sentinel-1 -p GRD \
+copernicus_explorer_cli search sentinel-1 -p GRD \
   --bbox 47.5,6.0,45.5,11.0 \
   --start 2026-03-01 --end 2026-03-24
 
 # Sentinel-2 by tile, limit to 3 results
-copernicus_explorer search sentinel-2 -p L2A --tile T31TFJ -n 3
+copernicus_explorer_cli search sentinel-2 -p L2A --tile T31TFJ -n 3
 
 # Search using a GeoJSON file as the area of interest
-copernicus_explorer search sentinel-2 -p L2A --geojson roi.geojson -c 30
+copernicus_explorer_cli search sentinel-2 -p L2A --geojson roi.geojson -c 30
 ```
 
 **Options:**
@@ -154,10 +204,10 @@ environment, or accepts them as flags.
 # From environment variables
 export COPERNICUS_USER="you@example.com"
 export COPERNICUS_PASS="yourpassword"
-copernicus_explorer auth
+copernicus_explorer_cli auth
 
 # Or pass directly
-copernicus_explorer auth -u you@example.com -P yourpassword
+copernicus_explorer_cli auth -u you@example.com -P yourpassword
 ```
 
 ### download
@@ -166,23 +216,23 @@ Download one or more scenes by name or by CDSE product ID. Requires authenticati
 
 ```bash
 # Single scene by name
-copernicus_explorer download \
+copernicus_explorer_cli download \
   "S2B_MSIL2A_20260315T105019_N0512_R051_T31TCJ_20260315T144522.SAFE" \
   -o ./data
 
 # Multiple scenes concurrently (max 4 in parallel by default)
-copernicus_explorer download \
+copernicus_explorer_cli download \
   "S2B_MSIL2A_20260315T105019_N0512_R051_T31TCJ_20260315T144522.SAFE" \
   "S2A_MSIL2A_20260317T104021_N0512_R008_T31TCJ_20260317T160837.SAFE" \
   -o ./data -j 2
 
 # Download by product UUID (skips the name-to-ID resolution query)
-copernicus_explorer download --id \
+copernicus_explorer_cli download --id \
   "a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
   -o ./data
 
 # Download directly to an S3-compatible bucket
-copernicus_explorer download --id \
+copernicus_explorer_cli download --id \
   "a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
   -o s3://my-bucket/SAFE/ --s3-config ~/.config/copernicus_explorer/s3.conf
 ```
@@ -305,8 +355,8 @@ More examples can be found in [rust examples](copernicus_explorer/examples)
 ### Download with a progress callback
 
 `download_by_id_to_with_progress` reports progress through a
-`DownloadProgressCallback` instead of a terminal progress bar — useful for GUIs
-or custom UIs:
+`DownloadProgressCallback` instead of a terminal progress bar — useful for the
+GUI, TUI, or other custom UIs:
 
 ```rust
 use std::sync::Arc;
@@ -410,6 +460,12 @@ More examples can be found in [python examples](python/examples)
 | `download_by_id(id, directory, token, s3_config=None)` | Download a single product by CDSE UUID; skips name-to-ID resolution |
 | `download_products(products, directory, token, max_concurrent=4, s3_config=None)` | Download multiple products concurrently; returns a list of paths (or `None` on failure) |
 | `get_scene_id(scene_name)` | Resolve a scene name to its CDSE UUID |
+| `run_tui()` | Launch the interactive terminal UI (blocks until quit) |
+
+After `pip install` / `maturin develop`, console scripts are:
+
+- `copernicus-explorer` — interactive TUI
+- `copernicus-explorer-cli` — Click CLI (`search` / `download` / `auth`)
 
 ## Running tests
 

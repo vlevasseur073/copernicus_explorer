@@ -1,6 +1,7 @@
 """Command-line interface for Copernicus Explorer.
 
-Mirrors the Rust CLI (``copernicus-explorer search|download|auth``).
+Invoked as ``copernicus-explorer-cli`` (``search`` / ``download`` / ``auth``).
+The default ``copernicus-explorer`` console script launches the TUI instead.
 """
 
 from __future__ import annotations
