@@ -6,6 +6,7 @@ use chrono::{Duration, Utc};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
+use std::time::Instant;
 use tokio::runtime::Runtime;
 use tokio::sync::Semaphore;
 
@@ -79,6 +80,8 @@ pub struct DownloadState {
     pub label: String,
     pub downloaded: u64,
     pub total: Option<u64>,
+    /// When the transfer actually started (for speed / ETA).
+    pub started_at: Option<Instant>,
     pub status: DownloadUiStatus,
 }
 
@@ -233,15 +236,21 @@ impl App {
                         label: id.clone(),
                         downloaded: 0,
                         total: None,
+                        started_at: None,
                         status: DownloadUiStatus::Downloading,
                     });
                     match event {
                         DownloadProgressEvent::Started { label, total } => {
                             state.label = label;
                             state.total = total;
+                            state.downloaded = 0;
+                            state.started_at = Some(Instant::now());
                             state.status = DownloadUiStatus::Downloading;
                         }
                         DownloadProgressEvent::Progress { downloaded } => {
+                            if state.started_at.is_none() {
+                                state.started_at = Some(Instant::now());
+                            }
                             state.downloaded = downloaded;
                         }
                         DownloadProgressEvent::Completed { path } => {
@@ -508,6 +517,7 @@ impl App {
                         label: product_name.clone(),
                         downloaded: 0,
                         total: None,
+                        started_at: None,
                         status: DownloadUiStatus::Downloading,
                     },
                 );
@@ -722,7 +732,7 @@ async fn build_and_execute_search(params: SearchParams) -> SearchOutcome {
 }
 
 pub fn format_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut size = bytes as f64;
     let mut unit = 0;
     while size >= 1024.0 && unit < UNITS.len() - 1 {
@@ -730,8 +740,42 @@ pub fn format_bytes(bytes: u64) -> String {
         unit += 1;
     }
     if unit == 0 {
-        format!("{} {}", bytes, UNITS[0])
+        format!("{bytes} {}", UNITS[0])
     } else {
         format!("{size:.1} {}", UNITS[unit])
     }
+}
+
+pub fn format_rate(bytes_per_sec: f64) -> String {
+    if !bytes_per_sec.is_finite() || bytes_per_sec <= 0.0 {
+        return "—/s".to_string();
+    }
+    format!("{}/s", format_bytes(bytes_per_sec as u64))
+}
+
+pub fn format_eta(remaining_secs: f64) -> String {
+    if !remaining_secs.is_finite() || remaining_secs < 0.0 {
+        return "—".to_string();
+    }
+    let secs = remaining_secs.round() as u64;
+    let hours = secs / 3600;
+    let mins = (secs % 3600) / 60;
+    let secs = secs % 60;
+    if hours > 0 {
+        format!("{hours}h{mins:02}m")
+    } else if mins > 0 {
+        format!("{mins}m{secs:02}s")
+    } else {
+        format!("{secs}s")
+    }
+}
+
+/// Instantaneous-ish transfer rate from bytes downloaded since `started_at`.
+pub fn download_rate(downloaded: u64, started_at: Option<Instant>) -> Option<f64> {
+    let started = started_at?;
+    let elapsed = started.elapsed().as_secs_f64();
+    if elapsed < 0.05 {
+        return None;
+    }
+    Some(downloaded as f64 / elapsed)
 }

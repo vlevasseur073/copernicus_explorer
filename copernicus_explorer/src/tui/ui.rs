@@ -1,11 +1,12 @@
 use super::app::{
-    App, DownloadUiStatus, FilterField, MAX_CONCURRENT_DOWNLOADS, Pane, format_bytes,
+    App, DownloadState, DownloadUiStatus, FilterField, MAX_CONCURRENT_DOWNLOADS, Pane,
+    download_rate, format_bytes, format_eta, format_rate,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, Clear, Gauge, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 
 pub fn draw(frame: &mut Frame, app: &App) {
     let root = Layout::default()
@@ -13,7 +14,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(1),
             Constraint::Min(10),
-            Constraint::Length(7),
+            Constraint::Length(9),
             Constraint::Length(1),
             Constraint::Length(1),
         ])
@@ -273,35 +274,12 @@ fn draw_downloads(frame: &mut Frame, app: &App, area: Rect) {
             continue;
         };
         let selected = focused && i == app.selected_download;
-        let label = truncate(&state.label, 40);
         match &state.status {
             DownloadUiStatus::Downloading => {
-                let (ratio, label_text) = if let Some(total) = state.total.filter(|t| *t > 0) {
-                    let ratio = (state.downloaded as f64 / total as f64).clamp(0.0, 1.0);
-                    (
-                        ratio,
-                        format!(
-                            "{label}  {} / {} ({:.0}%)",
-                            format_bytes(state.downloaded),
-                            format_bytes(total),
-                            ratio * 100.0
-                        ),
-                    )
-                } else {
-                    (
-                        0.0,
-                        format!("{label}  {} …", format_bytes(state.downloaded)),
-                    )
-                };
-                let gauge = Gauge::default()
-                    .gauge_style(if selected {
-                        Style::default().fg(Color::Cyan).bg(Color::Black)
-                    } else {
-                        Style::default().fg(Color::Green).bg(Color::Black)
-                    })
-                    .ratio(ratio)
-                    .label(label_text);
-                frame.render_widget(gauge, chunks[i]);
+                frame.render_widget(
+                    Paragraph::new(progress_line(state, chunks[i].width as usize, selected)),
+                    chunks[i],
+                );
             }
             DownloadUiStatus::Completed(path) => {
                 let style = if selected {
@@ -312,6 +290,7 @@ fn draw_downloads(frame: &mut Frame, app: &App, area: Rect) {
                 } else {
                     Style::default().fg(Color::Green)
                 };
+                let label = truncate(&state.label, 40);
                 frame.render_widget(
                     Paragraph::new(format!("✓ {label} → {path}")).style(style),
                     chunks[i],
@@ -326,6 +305,7 @@ fn draw_downloads(frame: &mut Frame, app: &App, area: Rect) {
                 } else {
                     Style::default().fg(Color::Red)
                 };
+                let label = truncate(&state.label, 40);
                 frame.render_widget(
                     Paragraph::new(format!("✗ {label}: {message}")).style(style),
                     chunks[i],
@@ -333,6 +313,105 @@ fn draw_downloads(frame: &mut Frame, app: &App, area: Rect) {
             }
         }
     }
+}
+
+/// Build a CLI-style progress line: `name  [████░░░░]  42%  12 MiB/30 MiB  2 MiB/s  eta 9s`.
+fn progress_line(state: &DownloadState, width: usize, selected: bool) -> Line<'static> {
+    let rate = download_rate(state.downloaded, state.started_at);
+    let (ratio, stats) = if let Some(total) = state.total.filter(|t| *t > 0) {
+        let ratio = (state.downloaded as f64 / total as f64).clamp(0.0, 1.0);
+        let mut parts = vec![
+            format!("{:.0}%", ratio * 100.0),
+            format!("{}/{}", format_bytes(state.downloaded), format_bytes(total)),
+        ];
+        if let Some(r) = rate {
+            parts.push(format_rate(r));
+            let remaining = (total.saturating_sub(state.downloaded)) as f64 / r;
+            parts.push(format!("eta {}", format_eta(remaining)));
+        }
+        (Some(ratio), parts.join("  "))
+    } else {
+        let mut parts = vec![format_bytes(state.downloaded)];
+        if let Some(r) = rate {
+            parts.push(format_rate(r));
+        } else {
+            parts.push("…".to_string());
+        }
+        (None, parts.join("  "))
+    };
+
+    // Reserve space for "  [bar]  " + stats; give the rest to the label.
+    let bar_width = if ratio.is_some() {
+        (width / 4).clamp(12, 28)
+    } else {
+        0
+    };
+    let chrome = if bar_width > 0 {
+        2 + bar_width + 2 + 2 + stats.chars().count()
+    } else {
+        2 + stats.chars().count()
+    };
+    let label_budget = width.saturating_sub(chrome).max(8);
+    let label = truncate(&state.label, label_budget);
+
+    let bar_style = if selected {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Cyan)
+    };
+    let dim = Style::default().fg(Color::DarkGray);
+    let text_style = if selected {
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+
+    let mut spans = vec![Span::styled(label, text_style), Span::raw("  ")];
+    if let Some(ratio) = ratio {
+        spans.push(Span::styled("[", dim));
+        spans.push(Span::styled(progress_bar(ratio, bar_width), bar_style));
+        spans.push(Span::styled("]", dim));
+        spans.push(Span::raw("  "));
+    } else {
+        spans.push(Span::styled(spinner_frame(state), bar_style));
+        spans.push(Span::raw("  "));
+    }
+    spans.push(Span::styled(stats, text_style));
+    Line::from(spans)
+}
+
+fn progress_bar(ratio: f64, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    // Match indicatif's `progress_chars("█▓░")`: filled / current / empty.
+    let pos = (ratio * width as f64).clamp(0.0, width as f64);
+    let filled = pos.floor() as usize;
+    let frac = pos - filled as f64;
+    let mut out = String::with_capacity(width);
+    for i in 0..width {
+        if i < filled {
+            out.push('█');
+        } else if i == filled && frac > 0.0 {
+            out.push('▓');
+        } else {
+            out.push('░');
+        }
+    }
+    out
+}
+
+fn spinner_frame(state: &DownloadState) -> &'static str {
+    const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let ticks = state
+        .started_at
+        .map(|t| t.elapsed().as_millis() / 80)
+        .unwrap_or(0);
+    FRAMES[(ticks as usize) % FRAMES.len()]
 }
 
 fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
