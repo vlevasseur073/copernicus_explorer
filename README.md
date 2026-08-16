@@ -111,7 +111,7 @@ current working directory.
 A keyboard-driven multi-pane terminal UI (lazygit/gitui style) for interactive
 search and download. This is the default `copernicus_explorer` binary:
 
-![Copernicus Explorer terminal UI](docs/tui-screenshot.png)
+![Copernicus Explorer terminal UI](docs/tui-screenshot.svg)
 
 ```bash
 # Requires COPERNICUS_USER / COPERNICUS_PASS for downloads
