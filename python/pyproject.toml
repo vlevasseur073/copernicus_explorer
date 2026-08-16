@@ -12,7 +12,8 @@ dependencies = ["click>=8.0"]
 readme = "README.md"
 
 [project.scripts]
-copernicus-explorer = "copernicus_explorer_py.cli:main"
+copernicus-explorer = "copernicus_explorer_py.__main__:main"
+copernicus-explorer-cli = "copernicus_explorer_py.cli:main"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

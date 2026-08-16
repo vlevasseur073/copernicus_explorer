@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 description = "Terminal UI for browsing and downloading Sentinel products from CDSE"
 
+[lib]
+name = "copernicus_explorer_tui"
+path = "src/lib.rs"
+
 [[bin]]
 name = "copernicus_explorer_tui"
 path = "src/main.rs"

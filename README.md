@@ -464,6 +464,12 @@ More examples can be found in [python examples](python/examples)
 | `download_by_id(id, directory, token, s3_config=None)` | Download a single product by CDSE UUID; skips name-to-ID resolution |
 | `download_products(products, directory, token, max_concurrent=4, s3_config=None)` | Download multiple products concurrently; returns a list of paths (or `None` on failure) |
 | `get_scene_id(scene_name)` | Resolve a scene name to its CDSE UUID |
+| `run_tui()` | Launch the interactive terminal UI (blocks until quit) |
+
+After `pip install` / `maturin develop`, console scripts are:
+
+- `copernicus-explorer` — interactive TUI
+- `copernicus-explorer-cli` — Click CLI (`search` / `download` / `auth`)
 
 ## Running tests
 

@@ -50,7 +50,7 @@ fn to_pyerr(err: copernicus_explorer::CopernicusError) -> PyErr {
 /// Python doesn't have Rust-style enums, so we store the Rust enum inside
 /// a struct and expose it as a class with classmethods for each variant.
 /// This is the standard PyO3 pattern for wrapping enums.
-#[pyclass(name = "Satellite")]
+#[pyclass(name = "Satellite", from_py_object)]
 #[derive(Clone)]
 struct PySatellite {
     inner: copernicus_explorer::Satellite,
@@ -126,7 +126,7 @@ impl PySatellite {
 /// We store plain Python-friendly types (strings, floats) rather than
 /// wrapping the Rust struct directly, because `Product` contains types
 /// that don't implement `Clone` (required by `#[pyclass]`).
-#[pyclass(name = "Product")]
+#[pyclass(name = "Product", from_py_object)]
 #[derive(Clone)]
 struct PyProduct {
     #[pyo3(get)]
@@ -213,7 +213,7 @@ impl PyProduct {
 // ---------------------------------------------------------------------------
 
 /// A geographic point (latitude, longitude).
-#[pyclass(name = "Point")]
+#[pyclass(name = "Point", from_py_object)]
 #[derive(Clone)]
 struct PyPoint {
     #[pyo3(get)]
@@ -235,7 +235,7 @@ impl PyPoint {
 }
 
 /// A bounding box defined by upper-left (lat, lon) and lower-right (lat, lon).
-#[pyclass(name = "BoundingBox")]
+#[pyclass(name = "BoundingBox", from_py_object)]
 #[derive(Clone)]
 struct PyBoundingBox {
     #[pyo3(get)]
@@ -284,7 +284,7 @@ impl PyBoundingBox {
 /// reference counts -- you can't move them.  So we use `&mut self`
 /// which borrows the object in place, and return `Self` by cloning
 /// to allow Python-style chaining.
-#[pyclass(name = "SearchQuery")]
+#[pyclass(name = "SearchQuery", from_py_object)]
 #[derive(Clone)]
 struct PySearchQuery {
     satellite: copernicus_explorer::Satellite,
@@ -588,7 +588,7 @@ fn pyany_to_iso(obj: &Bound<'_, PyAny>) -> PyResult<String> {
     if obj.is_instance_of::<pyo3::types::PyString>() {
         return obj.extract::<String>();
     }
-    if obj.downcast::<PyDateTime>().is_ok() {
+    if obj.cast::<PyDateTime>().is_ok() {
         let iso: String = obj.call_method0("isoformat")?.extract()?;
         return Ok(iso);
     }
@@ -619,6 +619,12 @@ fn parse_datetime(s: &str) -> PyResult<chrono::DateTime<chrono::Utc>> {
     )))
 }
 
+/// Launch the interactive terminal UI (blocks until the user quits).
+#[pyfunction]
+fn run_tui() -> PyResult<()> {
+    copernicus_explorer_tui::run().map_err(|e| PyRuntimeError::new_err(e.to_string()))
+}
+
 // ---------------------------------------------------------------------------
 // Module definition
 // ---------------------------------------------------------------------------
@@ -643,5 +649,6 @@ fn copernicus_explorer_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(get_scene_id, m)?)?;
     m.add_function(wrap_pyfunction!(format_products, m)?)?;
     m.add_function(wrap_pyfunction!(print_products, m)?)?;
+    m.add_function(wrap_pyfunction!(run_tui, m)?)?;
     Ok(())
 }

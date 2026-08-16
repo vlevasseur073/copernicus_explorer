@@ -30,11 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   an `OutputDestination` while emitting progress events through a callback
   (used by the GUI and TUI; terminal progress bars remain the default when no
   callback is provided).
+- **Python TUI**: the Python package links the TUI and exposes `run_tui()`.
+  Console script `copernicus-explorer` launches the TUI; the Click CLI moves to
+  `copernicus-explorer-cli` (`search` / `download` / `auth`).
+- **PyO3 0.29**: Python bindings bumped for Python 3.14 support.
 
 #### Changed
 
 - **`Satellite`**: now derives `PartialEq` (required by the GUI/TUI satellite
   selectors).
+- **Python console scripts**: `copernicus-explorer` now starts the TUI;
+  scripting CLI is `copernicus-explorer-cli`.
 
 ## Release 0.3.x
 

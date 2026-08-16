@@ -19,7 +19,8 @@ compiled speed with no serialization overhead.
 - **Batch download** multiple products concurrently with configurable parallelism
 - **Authenticate** against the CDSE OAuth2 identity provider
 - Supports **Sentinel-1, -2, -3, -5P, and -6**
-- Includes a **CLI** (`copernicus-explorer`) for quick terminal usage
+- Includes an interactive **terminal UI** (`copernicus-explorer`) and a **CLI**
+  (`copernicus-explorer-cli`) for scripting
 
 ## Installation
 
@@ -160,12 +161,31 @@ export COPERNICUS_PASS="yourpassword"
 token = ce.get_access_token_from_env()
 ```
 
+## Terminal UI
+
+After install, the default console script launches the interactive TUI:
+
+```bash
+export COPERNICUS_USER="you@example.com"
+export COPERNICUS_PASS="yourpassword"
+
+copernicus-explorer
+# or: python -m copernicus_explorer_py
+```
+
+From Python:
+
+```python
+import copernicus_explorer_py as ce
+ce.run_tui()
+```
+
 ## CLI usage
 
-Installing the package also provides the `copernicus-explorer` command:
+The Click CLI is available as `copernicus-explorer-cli`:
 
 ```
-copernicus-explorer [OPTIONS] COMMAND [ARGS]...
+copernicus-explorer-cli [OPTIONS] COMMAND [ARGS]...
 
 Commands:
   search    Search the CDSE catalogue for satellite products
@@ -179,18 +199,18 @@ Search the catalogue. Dates default to the last 30 days if omitted.
 
 ```bash
 # Sentinel-2 L2A near Toulouse, max 30% cloud cover
-copernicus-explorer search sentinel-2 -p L2A --point 43.6,1.44 -c 30
+copernicus-explorer-cli search sentinel-2 -p L2A --point 43.6,1.44 -c 30
 
 # Sentinel-1 GRD over the Alps with explicit date range
-copernicus-explorer search sentinel-1 -p GRD \
+copernicus-explorer-cli search sentinel-1 -p GRD \
   --bbox 47.5,6.0,45.5,11.0 \
   --start 2026-03-01 --end 2026-03-24
 
 # Sentinel-2 by tile, limit to 3 results
-copernicus-explorer search sentinel-2 -p L2A --tile T31TFJ -n 3
+copernicus-explorer-cli search sentinel-2 -p L2A --tile T31TFJ -n 3
 
 # Search using a GeoJSON file as the area of interest
-copernicus-explorer search sentinel-2 -p L2A --geojson roi.geojson -c 30
+copernicus-explorer-cli search sentinel-2 -p L2A --geojson roi.geojson -c 30
 ```
 
 | Flag | Description |
@@ -212,23 +232,23 @@ Download one or more scenes by name or by CDSE product ID. Requires authenticati
 
 ```bash
 # Single scene by name
-copernicus-explorer download \
+copernicus-explorer-cli download \
   "S2B_MSIL2A_20260315T105019_N0512_R051_T31TCJ_20260315T144522.SAFE" \
   -o ./data
 
 # Multiple scenes concurrently (max 4 in parallel by default)
-copernicus-explorer download \
+copernicus-explorer-cli download \
   "S2B_MSIL2A_20260315T105019_N0512_R051_T31TCJ_20260315T144522.SAFE" \
   "S2A_MSIL2A_20260317T104021_N0512_R008_T31TCJ_20260317T160837.SAFE" \
   -o ./data -j 2
 
 # Download by product UUID (skips the name-to-ID resolution query)
-copernicus-explorer download --id \
+copernicus-explorer-cli download --id \
   "a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
   -o ./data
 
 # Download directly to an S3-compatible bucket
-copernicus-explorer download --id \
+copernicus-explorer-cli download --id \
   "a1b2c3d4-e5f6-7890-abcd-ef1234567890" \
   -o s3://my-bucket/SAFE/ --s3-config ~/.config/copernicus_explorer/s3.conf
 ```
@@ -248,8 +268,8 @@ copernicus-explorer download --id \
 Test your credentials:
 
 ```bash
-copernicus-explorer auth
-copernicus-explorer auth -u you@example.com -P yourpassword
+copernicus-explorer-cli auth
+copernicus-explorer-cli auth -u you@example.com -P yourpassword
 ```
 
 ## Python API reference
@@ -276,13 +296,14 @@ copernicus-explorer auth -u you@example.com -P yourpassword
 | `get_scene_id(scene_name)` | Resolve a scene name to its CDSE UUID |
 | `format_products(products)` | Format a list of products as a table string |
 | `print_products(products)` | Print a formatted product table to stdout |
+| `run_tui()` | Launch the interactive terminal UI (blocks until quit) |
 
 ## Relation to the Rust crate
 
 This package is the Python interface to the
 [`copernicus_explorer`](https://github.com/vlevasseur073/copernicus_explorer)
-Rust library. The Python import name is `copernicus_explorer_py` while the
-CLI command is `copernicus-explorer` (same name as the Rust CLI).
+Rust library. The Python import name is `copernicus_explorer_py`. Console
+scripts: `copernicus-explorer` (TUI) and `copernicus-explorer-cli` (Click CLI).
 
 If you are looking for the Rust library or the Rust-built CLI binary, see the
 [main repository README](https://github.com/vlevasseur073/copernicus_explorer).

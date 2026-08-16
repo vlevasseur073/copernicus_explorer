@@ -19,6 +19,7 @@ from copernicus_explorer_py.copernicus_explorer_py import (
     get_access_token_from_env,
     get_scene_id,
     print_products,
+    run_tui,
 )
 
 __all__ = [
@@ -35,4 +36,5 @@ __all__ = [
     "get_access_token_from_env",
     "get_scene_id",
     "print_products",
+    "run_tui",
 ]
