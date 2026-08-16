@@ -16,7 +16,9 @@ A Rust client for browsing and downloading Sentinel satellite products from the
 - **Authenticate** against the CDSE OAuth2 identity provider
 - Supports Sentinel-1, Sentinel-2, Sentinel-3, Sentinel-5P, and Sentinel-6
 - **Async-first** design (tokio) with synchronous `blocking` wrappers
-- Usable as a **Rust library**, a **CLI**, or from **Python** via native bindings
+- **Download progress callbacks** for embedding progress reporting in custom UIs
+- Usable as a **Rust library**, a **CLI**, a **desktop GUI** (egui), or from
+  **Python** via native bindings
 
 ## Prerequisites
 
@@ -28,7 +30,7 @@ A Rust client for browsing and downloading Sentinel satellite products from the
 
 ## Project structure
 
-The repository is a Cargo workspace with two members:
+The repository is a Cargo workspace with three members:
 
 ```
 copernicus_explorer/       Cargo workspace root
@@ -43,11 +45,15 @@ copernicus_explorer/       Cargo workspace root
       geometry.rs          Point, BoundingBox, Polygon, GeoJSON parsing, WKT conversion
       auth.rs              OAuth2 token retrieval (reqwest, async)
       search.rs            SearchQuery builder, OData filter construction (async)
-      download.rs          Single & batch download with streaming I/O + progress bars (async)
+      download.rs          Single & batch download with streaming I/O + progress bars/callbacks (async)
       s3.rs                S3Config, OutputDestination, INI config parser, S3 upload
       blocking.rs          Synchronous wrappers (block_on) for non-async contexts
     examples/
       test_rust_api.rs     Interactive demo: search, download one or all results
+  gui/                     Desktop GUI (egui / eframe)
+    Cargo.toml
+    src/
+      main.rs              Native app: search form + download progress bars
   python/                  Python bindings (PyO3 + maturin)
     Cargo.toml
     pyproject.toml
@@ -66,6 +72,31 @@ cargo build --release
 ```
 
 The CLI binary is produced at `target/release/copernicus_explorer`.
+
+Build the GUI with:
+
+```bash
+cargo build --release -p copernicus_explorer_gui
+```
+
+The GUI binary is produced at `target/release/copernicus_explorer_gui`.
+
+## Desktop GUI
+
+A native egui application for interactive search and download:
+
+```bash
+# Requires COPERNICUS_USER / COPERNICUS_PASS for downloads
+export COPERNICUS_USER="you@example.com"
+export COPERNICUS_PASS="yourpassword"
+
+cargo run --release -p copernicus_explorer_gui
+```
+
+The GUI supports satellite/product selection, date range, tile ID, cloud cover,
+point, bounding box, and GeoJSON path filters. Search results can be downloaded
+individually with per-product progress bars. Downloaded files are written to the
+current working directory.
 
 ## CLI usage
 
@@ -270,6 +301,31 @@ fn main() -> Result<(), copernicus_explorer::CopernicusError> {
 ```
 
 More examples can be found in [rust examples](copernicus_explorer/examples)
+
+### Download with a progress callback
+
+`download_by_id_to_with_progress` reports progress through a
+`DownloadProgressCallback` instead of a terminal progress bar — useful for GUIs
+or custom UIs:
+
+```rust
+use std::sync::Arc;
+use copernicus_explorer::{
+    download_by_id_to_with_progress, DownloadProgressEvent, OutputDestination,
+};
+
+let progress = Arc::new(|event: DownloadProgressEvent| {
+    match event {
+        DownloadProgressEvent::Started { label, total } => { /* … */ }
+        DownloadProgressEvent::Progress { downloaded } => { /* … */ }
+        DownloadProgressEvent::Completed { path } => { /* … */ }
+        DownloadProgressEvent::Failed { message } => { /* … */ }
+    }
+});
+
+let dest = OutputDestination::Local("./data".into());
+let path = download_by_id_to_with_progress(&product_id, &dest, &token, progress).await?;
+```
 
 ## Python bindings
 
