@@ -46,12 +46,10 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> 
         app.poll_messages();
         terminal.draw(|frame| ui::draw(frame, app))?;
 
-        // Drain all pending input so other events cannot starve key handling.
         while event::poll(Duration::from_millis(0))? {
             handle_event(app, event::read()?)?;
         }
 
-        // Idle wait when the queue is empty so we still redraw progress often.
         if event::poll(Duration::from_millis(50))? {
             handle_event(app, event::read()?)?;
         }

@@ -1,4 +1,4 @@
-use crate::app::{
+use super::app::{
     App, DownloadUiStatus, FilterField, MAX_CONCURRENT_DOWNLOADS, Pane, format_bytes,
 };
 use ratatui::Frame;

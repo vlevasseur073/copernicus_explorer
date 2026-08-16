@@ -1,4 +1,4 @@
-use crate::app::{App, FilterField, Pane};
+use super::app::{App, FilterField, Pane};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 pub fn handle_key(app: &mut App, key: KeyEvent) {

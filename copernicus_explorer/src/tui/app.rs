@@ -1,8 +1,8 @@
-use chrono::{Duration, Utc};
-use copernicus_explorer::{
+use crate::{
     BoundingBox, CopernicusError, DownloadProgressEvent, Geometry, OutputDestination, Point,
     Product, Satellite, SearchQuery, download_by_id_to_with_progress, get_access_token_from_env,
 };
+use chrono::{Duration, Utc};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};

@@ -15,14 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   with egui/eframe. Search the catalogue by satellite, product type, date
   range, tile, cloud cover, point, bounding box, or GeoJSON path, then download
   selected products with live progress bars.
-- **Terminal UI**: new `tui` workspace crate (`copernicus_explorer_tui`) built
-  with ratatui/crossterm. Multi-pane layout for catalogue search (satellite,
-  product type, date range, tile, cloud cover, point, bounding box, or GeoJSON
-  path) and async concurrent downloads with live progress gauges (mark with
-  Space, `d` for marked/current, `a` for all; up to 4 in parallel). Session
-  download tracking marks completed products with `✓` and in-progress ones with
-  `↓`. Pane navigation via Tab/Esc and Alt+arrows. `s` replaces results; `S`
-  appends new hits (deduplicated by product ID).
+- **Terminal UI**: interactive TUI lives in `copernicus_explorer::tui` and is
+  the default binary `copernicus_explorer`. Multi-pane layout for catalogue
+  search (satellite, product type, date range, tile, cloud cover, point,
+  bounding box, or GeoJSON path) and async concurrent downloads with live
+  progress gauges (mark with Space, `d` for marked/current, `a` for all; up to
+  4 in parallel). Session download tracking marks completed products with `✓`
+  and in-progress ones with `↓`. Pane navigation via Tab/Esc and Alt+arrows.
+  `s` replaces results; `S` appends new hits (deduplicated by product ID).
+- **CLI binary rename**: the clap CLI is now `copernicus_explorer_cli` (mirrors
+  Python's `copernicus-explorer` / `copernicus-explorer-cli` split).
 - **Download progress callbacks**: new `DownloadProgressEvent` enum and
   `DownloadProgressCallback` type for programmatic progress reporting
   (`Started`, `Progress`, `Completed`, `Failed`).
@@ -30,8 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   an `OutputDestination` while emitting progress events through a callback
   (used by the GUI and TUI; terminal progress bars remain the default when no
   callback is provided).
-- **Python TUI**: the Python package links the TUI and exposes `run_tui()`.
-  Console script `copernicus-explorer` launches the TUI; the Click CLI moves to
+- **Python TUI**: the Python package exposes `run_tui()`. Console script
+  `copernicus-explorer` launches the TUI; the Click CLI is
   `copernicus-explorer-cli` (`search` / `download` / `auth`).
 - **PyO3 0.29**: Python bindings bumped for Python 3.14 support.
 
@@ -39,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **`Satellite`**: now derives `PartialEq` (required by the GUI/TUI satellite
   selectors).
+- **Rust binaries**: `copernicus_explorer` is the TUI; scripting CLI is
+  `copernicus_explorer_cli`.
 - **Python console scripts**: `copernicus-explorer` now starts the TUI;
   scripting CLI is `copernicus-explorer-cli`.
 

@@ -622,7 +622,7 @@ fn parse_datetime(s: &str) -> PyResult<chrono::DateTime<chrono::Utc>> {
 /// Launch the interactive terminal UI (blocks until the user quits).
 #[pyfunction]
 fn run_tui() -> PyResult<()> {
-    copernicus_explorer_tui::run().map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    copernicus_explorer::tui::run().map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
 
 // ---------------------------------------------------------------------------

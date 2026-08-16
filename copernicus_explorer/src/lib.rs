@@ -62,6 +62,7 @@ pub mod geometry;
 pub mod models;
 pub mod s3;
 pub mod search;
+pub mod tui;
 
 // Re-export the most commonly used types at the crate root for convenience.
 // This lets users write `use copernicus_explorer::Satellite` instead of
