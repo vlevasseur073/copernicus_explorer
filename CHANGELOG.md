@@ -15,18 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   with egui/eframe. Search the catalogue by satellite, product type, date
   range, tile, cloud cover, point, bounding box, or GeoJSON path, then download
   selected products with live progress bars.
+- **Terminal UI**: new `tui` workspace crate (`copernicus_explorer_tui`) built
+  with ratatui/crossterm. Multi-pane layout for catalogue search (satellite,
+  product type, date range, tile, cloud cover, point, bounding box, or GeoJSON
+  path) and async concurrent downloads with live progress gauges (mark with
+  Space, `d` for marked/current, `a` for all; up to 4 in parallel). Session
+  download tracking marks completed products with `✓` and in-progress ones with
+  `↓`. Pane navigation via Tab/Esc and Alt+arrows. `s` replaces results; `S`
+  appends new hits (deduplicated by product ID).
 - **Download progress callbacks**: new `DownloadProgressEvent` enum and
   `DownloadProgressCallback` type for programmatic progress reporting
   (`Started`, `Progress`, `Completed`, `Failed`).
 - **`download_by_id_to_with_progress()`**: downloads a product by CDSE UUID to
   an `OutputDestination` while emitting progress events through a callback
-  (used by the GUI; terminal progress bars remain the default when no callback
-  is provided).
+  (used by the GUI and TUI; terminal progress bars remain the default when no
+  callback is provided).
 
 #### Changed
 
-- **`Satellite`**: now derives `PartialEq` (required by the GUI satellite
-  selector).
+- **`Satellite`**: now derives `PartialEq` (required by the GUI/TUI satellite
+  selectors).
 
 ## Release 0.3.x
 

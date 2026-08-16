@@ -1,0 +1,18 @@
+[package]
+name = "copernicus_explorer_tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Terminal UI for browsing and downloading Sentinel products from CDSE"
+
+[[bin]]
+name = "copernicus_explorer_tui"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+chrono = "0.4"
+copernicus_explorer = { path = "../copernicus_explorer" }

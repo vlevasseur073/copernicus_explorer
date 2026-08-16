@@ -17,8 +17,8 @@ A Rust client for browsing and downloading Sentinel satellite products from the
 - Supports Sentinel-1, Sentinel-2, Sentinel-3, Sentinel-5P, and Sentinel-6
 - **Async-first** design (tokio) with synchronous `blocking` wrappers
 - **Download progress callbacks** for embedding progress reporting in custom UIs
-- Usable as a **Rust library**, a **CLI**, a **desktop GUI** (egui), or from
-  **Python** via native bindings
+- Usable as a **Rust library**, a **CLI**, a **desktop GUI** (egui), a
+  **terminal UI** (ratatui), or from **Python** via native bindings
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ A Rust client for browsing and downloading Sentinel satellite products from the
 
 ## Project structure
 
-The repository is a Cargo workspace with three members:
+The repository is a Cargo workspace with four members:
 
 ```
 copernicus_explorer/       Cargo workspace root
@@ -54,6 +54,13 @@ copernicus_explorer/       Cargo workspace root
     Cargo.toml
     src/
       main.rs              Native app: search form + download progress bars
+  tui/                     Terminal UI (ratatui / crossterm)
+    Cargo.toml
+    src/
+      main.rs              Event loop and terminal setup
+      app.rs               Search/download state and async tasks
+      ui.rs                Multi-pane layout (filters, results, downloads)
+      events.rs            Keyboard handling
   python/                  Python bindings (PyO3 + maturin)
     Cargo.toml
     pyproject.toml
@@ -81,6 +88,14 @@ cargo build --release -p copernicus_explorer_gui
 
 The GUI binary is produced at `target/release/copernicus_explorer_gui`.
 
+Build the TUI with:
+
+```bash
+cargo build --release -p copernicus_explorer_tui
+```
+
+The TUI binary is produced at `target/release/copernicus_explorer_tui`.
+
 ## Desktop GUI
 
 A native egui application for interactive search and download:
@@ -97,6 +112,45 @@ The GUI supports satellite/product selection, date range, tile ID, cloud cover,
 point, bounding box, and GeoJSON path filters. Search results can be downloaded
 individually with per-product progress bars. Downloaded files are written to the
 current working directory.
+
+## Terminal UI
+
+A keyboard-driven multi-pane terminal UI (lazygit/gitui style) for interactive
+search and download:
+
+```bash
+# Requires COPERNICUS_USER / COPERNICUS_PASS for downloads
+export COPERNICUS_USER="you@example.com"
+export COPERNICUS_PASS="yourpassword"
+
+cargo run --release -p copernicus_explorer_tui
+```
+
+**Layout:** filters (left), results table (right), downloads with progress
+(bottom), status line and keybinding hints (footer).
+
+**Keybindings:**
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `Shift-Tab` / `Esc` | Cycle panes (Esc leaves Downloads → Results → Filters) |
+| `Alt`+`←`/`→`/`↑`/`↓` | Cycle panes (Alt+Right/Down next, Alt+Left/Up previous) |
+| `↑`/`↓` or `j`/`k` | Move selection / filter field |
+| `←`/`→` | Cycle satellite or product type |
+| `Enter` / `e` | Edit text filter (or cycle sat/product) |
+| `s` | Search (replace results) |
+| `S` | Append search (extend results, skip duplicates) |
+| `Space` | Mark / unmark result for batch download |
+| `d` / `Enter` | Download marked results (or the highlighted row) |
+| `a` | Download all search results concurrently |
+| `q` / `Ctrl-c` | Quit |
+
+Filters cover satellite, product type, date range, tile ID, cloud cover, point,
+bounding box, GeoJSON path, and max results. Downloads run asynchronously in the
+background (up to 4 concurrent) with live progress gauges — focus stays on the
+Results pane so you can keep browsing and queue more. Successfully downloaded
+products are marked with `✓` (green) for the rest of the session. Files are
+written to the current working directory.
 
 ## CLI usage
 
@@ -305,8 +359,8 @@ More examples can be found in [rust examples](copernicus_explorer/examples)
 ### Download with a progress callback
 
 `download_by_id_to_with_progress` reports progress through a
-`DownloadProgressCallback` instead of a terminal progress bar — useful for GUIs
-or custom UIs:
+`DownloadProgressCallback` instead of a terminal progress bar — useful for the
+GUI, TUI, or other custom UIs:
 
 ```rust
 use std::sync::Arc;

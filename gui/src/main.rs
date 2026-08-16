@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use copernicus_explorer::{
-    download_by_id_to_with_progress, get_access_token_from_env, DownloadProgressCallback,
-    DownloadProgressEvent, OutputDestination, Product, Satellite, SearchQuery,
+    DownloadProgressCallback, DownloadProgressEvent, OutputDestination, Product, Satellite,
+    SearchQuery, download_by_id_to_with_progress, get_access_token_from_env,
 };
 use eframe::egui;
 use std::collections::HashMap;
