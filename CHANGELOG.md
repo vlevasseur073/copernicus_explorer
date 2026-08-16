@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## Release 0.4.x
+
+### [0.4.0] - 2026-08-16
+
+#### Added
+
+- **Desktop GUI**: new `gui` workspace crate (`copernicus_explorer_gui`) built
+  with egui/eframe. Search the catalogue by satellite, product type, date
+  range, tile, cloud cover, point, bounding box, or GeoJSON path, then download
+  selected products with live progress bars.
+- **Download progress callbacks**: new `DownloadProgressEvent` enum and
+  `DownloadProgressCallback` type for programmatic progress reporting
+  (`Started`, `Progress`, `Completed`, `Failed`).
+- **`download_by_id_to_with_progress()`**: downloads a product by CDSE UUID to
+  an `OutputDestination` while emitting progress events through a callback
+  (used by the GUI; terminal progress bars remain the default when no callback
+  is provided).
+
+#### Changed
+
+- **`Satellite`**: now derives `PartialEq` (required by the GUI satellite
+  selector).
+
 ## Release 0.3.x
 
 ### [0.3.1] - 2025-04-01

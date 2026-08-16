@@ -1,7 +1,10 @@
 [package]
 name = "copernicus_explorer_gui"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Desktop GUI for browsing and downloading Sentinel products from CDSE"
 
 [dependencies]
 eframe = "0.27"
