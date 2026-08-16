@@ -111,6 +111,8 @@ current working directory.
 A keyboard-driven multi-pane terminal UI (lazygit/gitui style) for interactive
 search and download. This is the default `copernicus_explorer` binary:
 
+![Copernicus Explorer terminal UI](docs/tui-screenshot.png)
+
 ```bash
 # Requires COPERNICUS_USER / COPERNICUS_PASS for downloads
 export COPERNICUS_USER="you@example.com"
@@ -140,7 +142,7 @@ cargo run --release -p copernicus_explorer
 
 Filters cover satellite, product type, date range, tile ID, cloud cover, point,
 bounding box, GeoJSON path, and max results. Downloads run asynchronously in the
-background (up to 4 concurrent) with live progress gauges — focus stays on the
+background (up to 4 concurrent) with live progress bars — focus stays on the
 Results pane so you can keep browsing and queue more. Successfully downloaded
 products are marked with `✓` (green) for the rest of the session. Files are
 written to the current working directory.

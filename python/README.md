@@ -165,6 +165,8 @@ token = ce.get_access_token_from_env()
 
 After install, the default console script launches the interactive TUI:
 
+![Copernicus Explorer terminal UI](../docs/tui-screenshot.png)
+
 ```bash
 export COPERNICUS_USER="you@example.com"
 export COPERNICUS_PASS="yourpassword"

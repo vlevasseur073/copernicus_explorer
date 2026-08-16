@@ -2,7 +2,10 @@
 
 mod app;
 mod events;
+mod screenshot;
 mod ui;
+
+pub use screenshot::write_demo_screenshot;
 
 use app::App;
 use crossterm::event::{self, Event, KeyEventKind};
