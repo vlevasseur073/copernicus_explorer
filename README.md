@@ -129,6 +129,7 @@ cargo run --release -p copernicus_explorer
 | Key | Action |
 |-----|--------|
 | `Tab` / `Shift-Tab` / `Esc` | Cycle panes (Esc leaves Downloads → Results → Filters) |
+| Left click | Focus the pane under the cursor |
 | `Alt`+`←`/`→`/`↑`/`↓` | Cycle panes (Alt+Right/Down next, Alt+Left/Up previous) |
 | `↑`/`↓` or `j`/`k` | Move selection / filter field |
 | `PgUp` / `PgDn` / `Home` / `End` | Page or jump to the ends of Results or Downloads |
