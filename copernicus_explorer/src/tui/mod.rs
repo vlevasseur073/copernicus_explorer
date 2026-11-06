@@ -8,7 +8,9 @@ mod ui;
 pub use screenshot::write_demo_screenshot;
 
 use app::App;
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind, MouseButton, MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -32,14 +34,18 @@ pub fn run() -> io::Result<()> {
 fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     Terminal::new(backend)
 }
 
 fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> io::Result<()> {
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
     Ok(())
 }
@@ -65,10 +71,19 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> 
 }
 
 fn handle_event(app: &mut App, event: Event) -> io::Result<()> {
-    if let Event::Key(key) = event
-        && key.kind != KeyEventKind::Release
-    {
-        events::handle_key(app, key);
+    match event {
+        Event::Key(key) if key.kind != KeyEventKind::Release => {
+            events::handle_key(app, key);
+        }
+        Event::Mouse(mouse) => match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                app.focus_pane_at(mouse.column, mouse.row);
+            }
+            MouseEventKind::ScrollDown => app.scroll_at(mouse.column, mouse.row, true),
+            MouseEventKind::ScrollUp => app.scroll_at(mouse.column, mouse.row, false),
+            _ => {}
+        },
+        _ => {}
     }
     Ok(())
 }

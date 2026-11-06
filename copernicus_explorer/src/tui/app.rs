@@ -3,6 +3,7 @@ use crate::{
     Product, Satellite, SearchQuery, download_by_id_to_with_progress, get_access_token_from_env,
 };
 use chrono::{Duration, Utc};
+use ratatui::layout::{Position, Rect};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
@@ -18,6 +19,29 @@ pub enum Pane {
     Filters,
     Results,
     Downloads,
+}
+
+/// Outer rectangles of the three panes from the last drawn frame.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PaneAreas {
+    pub filters: Rect,
+    pub results: Rect,
+    pub downloads: Rect,
+}
+
+impl PaneAreas {
+    fn hit(self, column: u16, row: u16) -> Option<Pane> {
+        let position = Position::new(column, row);
+        if self.filters.contains(position) {
+            Some(Pane::Filters)
+        } else if self.results.contains(position) {
+            Some(Pane::Results)
+        } else if self.downloads.contains(position) {
+            Some(Pane::Downloads)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,6 +158,8 @@ pub struct App {
     pub downloads: Arc<Mutex<HashMap<String, DownloadState>>>,
     pub download_order: Vec<String>,
     pub focus: Pane,
+    /// Pane rectangles from the last frame. Empty until the first draw.
+    pub pane_areas: PaneAreas,
     pub filter_field: FilterField,
     pub editing: bool,
     pub searching: bool,
@@ -174,6 +200,7 @@ impl App {
             downloads: Arc::new(Mutex::new(HashMap::new())),
             download_order: Vec::new(),
             focus: Pane::Filters,
+            pane_areas: PaneAreas::default(),
             filter_field: FilterField::Satellite,
             editing: false,
             searching: false,
@@ -385,6 +412,45 @@ impl App {
             Pane::Downloads => Pane::Results,
         };
         self.editing = false;
+    }
+
+    /// Focus the pane drawn at this cell. A click outside the panes does nothing.
+    /// Switching panes leaves edit mode; clicking the focused pane does not.
+    pub fn focus_pane_at(&mut self, column: u16, row: u16) {
+        let Some(pane) = self.pane_areas.hit(column, row) else {
+            return;
+        };
+        if pane != self.focus {
+            self.focus = pane;
+            self.editing = false;
+        }
+    }
+
+    /// Move one row in the list under the pointer. `down` follows the wheel
+    /// toward the user. Editing ignores the wheel, as it ignores arrow keys.
+    pub fn scroll_at(&mut self, column: u16, row: u16, down: bool) {
+        if self.editing {
+            return;
+        }
+        match self.pane_areas.hit(column, row) {
+            Some(Pane::Results) => {
+                self.focus = Pane::Results;
+                if down {
+                    self.select_next_result();
+                } else {
+                    self.select_prev_result();
+                }
+            }
+            Some(Pane::Downloads) => {
+                self.focus = Pane::Downloads;
+                if down {
+                    self.select_next_download();
+                } else {
+                    self.select_prev_download();
+                }
+            }
+            _ => {}
+        }
     }
 
     pub fn is_downloaded(&self, product_id: &str) -> bool {
@@ -871,7 +937,114 @@ pub fn download_rate(downloaded: u64, started_at: Option<Instant>) -> Option<f64
 
 #[cfg(test)]
 mod tests {
-    use super::reveal;
+    use super::{App, Pane, PaneAreas, reveal};
+    use crate::Product;
+    use ratatui::layout::Rect;
+
+    fn product(name: &str) -> Product {
+        Product {
+            name: name.to_string(),
+            id: name.to_string(),
+            acquisition_date: "2026-03-12T10:40:31.000Z".to_string(),
+            publication_date: "2026-03-12T10:40:31.000Z".to_string(),
+            online: true,
+            cloud_cover: None,
+        }
+    }
+
+    fn sample_areas() -> PaneAreas {
+        PaneAreas {
+            filters: Rect::new(0, 1, 38, 12),
+            results: Rect::new(38, 1, 62, 12),
+            downloads: Rect::new(0, 13, 100, 9),
+        }
+    }
+
+    #[test]
+    fn focus_pane_at_selects_each_pane() {
+        let mut app = App::new();
+        app.pane_areas = sample_areas();
+
+        app.focus_pane_at(1, 2);
+        assert_eq!(app.focus, Pane::Filters);
+
+        app.focus_pane_at(50, 2);
+        assert_eq!(app.focus, Pane::Results);
+
+        app.focus_pane_at(10, 15);
+        assert_eq!(app.focus, Pane::Downloads);
+    }
+
+    #[test]
+    fn focus_pane_at_ignores_the_status_row() {
+        let mut app = App::new();
+        app.pane_areas = sample_areas();
+        app.focus = Pane::Results;
+
+        app.focus_pane_at(10, 22);
+
+        assert_eq!(app.focus, Pane::Results);
+    }
+
+    #[test]
+    fn focus_pane_at_clears_editing_only_when_the_pane_changes() {
+        let mut app = App::new();
+        app.pane_areas = sample_areas();
+        app.focus = Pane::Filters;
+        app.editing = true;
+
+        app.focus_pane_at(1, 2);
+        assert_eq!(app.focus, Pane::Filters);
+        assert!(app.editing);
+
+        app.focus_pane_at(50, 2);
+        assert_eq!(app.focus, Pane::Results);
+        assert!(!app.editing);
+    }
+
+    #[test]
+    fn scroll_at_moves_the_result_under_the_pointer_by_one_row() {
+        let mut app = App::new();
+        app.pane_areas = sample_areas();
+        app.focus = Pane::Filters;
+        app.products = vec![product("a"), product("b"), product("c")];
+        app.selected_result = 0;
+
+        app.scroll_at(50, 2, true);
+        assert_eq!(app.focus, Pane::Results);
+        assert_eq!(app.selected_result, 1);
+
+        app.scroll_at(10, 22, true);
+        assert_eq!(app.selected_result, 1);
+    }
+
+    #[test]
+    fn scroll_at_is_ignored_while_editing() {
+        let mut app = App::new();
+        app.pane_areas = sample_areas();
+        app.focus = Pane::Filters;
+        app.editing = true;
+        app.products = vec![product("a"), product("b")];
+
+        app.scroll_at(50, 2, true);
+
+        assert!(app.editing);
+        assert_eq!(app.focus, Pane::Filters);
+        assert_eq!(app.selected_result, 0);
+    }
+
+    #[test]
+    fn scroll_at_moves_the_download_under_the_pointer_by_one_row() {
+        let mut app = App::new();
+        app.pane_areas = sample_areas();
+        app.download_order = vec!["a".into(), "b".into(), "c".into()];
+        app.selected_download = 0;
+
+        app.scroll_at(10, 15, true);
+
+        assert_eq!(app.focus, Pane::Downloads);
+        assert_eq!(app.selected_download, 1);
+    }
 
     #[test]
     fn reveal_keeps_offset_while_cursor_is_inside_the_window() {

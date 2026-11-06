@@ -25,6 +25,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     draw_title(frame, root[0]);
     draw_main(frame, app, root[1]);
+    app.pane_areas.downloads = root[2];
     draw_downloads(frame, app, root[2]);
     draw_status(frame, app, root[3]);
     draw_help(frame, app, root[4]);
@@ -50,6 +51,8 @@ fn draw_main(frame: &mut Frame, app: &mut App, area: Rect) {
         .constraints([Constraint::Percentage(38), Constraint::Percentage(62)])
         .split(area);
 
+    app.pane_areas.filters = chunks[0];
+    app.pane_areas.results = chunks[1];
     draw_filters(frame, app, chunks[0]);
     draw_results(frame, app, chunks[1]);
 }
@@ -542,6 +545,7 @@ mod tests {
     use crate::Product;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::layout::Rect;
 
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
         let buf = terminal.backend().buffer();
@@ -621,5 +625,16 @@ mod tests {
 
         assert!(text.contains("DL-PICKED"), "{text}");
         assert!(!text.contains("DL-FIRST"), "{text}");
+    }
+
+    #[test]
+    fn drawn_results_rect_accepts_a_click() {
+        let mut app = App::new();
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+
+        assert_eq!(app.pane_areas.results, Rect::new(38, 1, 62, 12));
+        app.focus_pane_at(app.pane_areas.results.x, app.pane_areas.results.y);
+        assert_eq!(app.focus, Pane::Results);
     }
 }
