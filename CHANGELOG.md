@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## Release 0.5.x
 
+### [0.5.1] - 2026-11-06
+
+#### Fixed
+
+- **Sentinel-3 cloud cover**: OLCI, SRAL, and SYN products do not expose a
+  `cloudCover` attribute, so a cloud-cover filter made those searches return
+  nothing. The filter is now applied only to Sentinel-3 SLSTR products
+  (`SL_*`). The CLI prints a warning when the filter is ignored.
+
 ### [0.5.0] - 2026-08-16
 
 #### Added
