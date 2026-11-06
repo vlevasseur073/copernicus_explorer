@@ -21,10 +21,10 @@ const FG: &str = "#c0caf5";
 
 /// Render a populated demo frame of the TUI to an SVG file.
 pub fn write_demo_screenshot(path: impl AsRef<Path>) -> io::Result<()> {
-    let app = demo_app();
+    let mut app = demo_app();
     let backend = TestBackend::new(COLS, ROWS);
     let mut terminal = Terminal::new(backend)?;
-    terminal.draw(|frame| ui::draw(frame, &app))?;
+    terminal.draw(|frame| ui::draw(frame, &mut app))?;
 
     let buffer = terminal.backend().buffer();
     let svg = buffer_to_svg(buffer);

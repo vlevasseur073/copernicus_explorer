@@ -118,11 +118,19 @@ pub struct App {
     pub max_results: String,
     pub products: Vec<Product>,
     pub selected_result: usize,
+    /// First visible results row. Kept so the cursor stays on screen.
+    pub results_offset: usize,
+    /// Data rows that fit in the results pane, updated while drawing.
+    pub results_viewport: usize,
     /// Product IDs marked for batch download (Space to toggle).
     pub marked: HashSet<String>,
     /// Product IDs successfully downloaded during this session.
     pub downloaded_ids: HashSet<String>,
     pub selected_download: usize,
+    /// First visible downloads row.
+    pub downloads_offset: usize,
+    /// Rows that fit in the downloads pane, updated while drawing.
+    pub downloads_viewport: usize,
     pub downloads: Arc<Mutex<HashMap<String, DownloadState>>>,
     pub download_order: Vec<String>,
     pub focus: Pane,
@@ -156,9 +164,13 @@ impl App {
             max_results: "10".to_string(),
             products: Vec::new(),
             selected_result: 0,
+            results_offset: 0,
+            results_viewport: 1,
             marked: HashSet::new(),
             downloaded_ids: HashSet::new(),
             selected_download: 0,
+            downloads_offset: 0,
+            downloads_viewport: 1,
             downloads: Arc::new(Mutex::new(HashMap::new())),
             download_order: Vec::new(),
             focus: Pane::Filters,
@@ -200,6 +212,7 @@ impl App {
                                 let n = products.len();
                                 self.products = products;
                                 self.selected_result = 0;
+                                self.results_offset = 0;
                                 self.marked.clear();
                                 self.status = format!("Found {n} product(s)");
                             }
@@ -214,6 +227,7 @@ impl App {
                             } else {
                                 self.products.clear();
                                 self.selected_result = 0;
+                                self.results_offset = 0;
                                 self.marked.clear();
                                 self.status =
                                     "No products matched these filters — try relaxing dates, cloud cover, or AOI"
@@ -409,6 +423,62 @@ impl App {
             self.selected_download = (self.selected_download + self.download_order.len() - 1)
                 % self.download_order.len();
         }
+    }
+
+    pub fn page_next_result(&mut self) {
+        self.shift_result(self.results_viewport.max(1) as isize);
+    }
+
+    pub fn page_prev_result(&mut self) {
+        self.shift_result(-(self.results_viewport.max(1) as isize));
+    }
+
+    pub fn select_first_result(&mut self) {
+        if !self.products.is_empty() {
+            self.selected_result = 0;
+        }
+    }
+
+    pub fn select_last_result(&mut self) {
+        if !self.products.is_empty() {
+            self.selected_result = self.products.len() - 1;
+        }
+    }
+
+    pub fn page_next_download(&mut self) {
+        self.shift_download(self.downloads_viewport.max(1) as isize);
+    }
+
+    pub fn page_prev_download(&mut self) {
+        self.shift_download(-(self.downloads_viewport.max(1) as isize));
+    }
+
+    pub fn select_first_download(&mut self) {
+        if !self.download_order.is_empty() {
+            self.selected_download = 0;
+        }
+    }
+
+    pub fn select_last_download(&mut self) {
+        if !self.download_order.is_empty() {
+            self.selected_download = self.download_order.len() - 1;
+        }
+    }
+
+    fn shift_result(&mut self, delta: isize) {
+        if self.products.is_empty() {
+            return;
+        }
+        let last = self.products.len() as isize - 1;
+        self.selected_result = (self.selected_result as isize + delta).clamp(0, last) as usize;
+    }
+
+    fn shift_download(&mut self, delta: isize) {
+        if self.download_order.is_empty() {
+            return;
+        }
+        let last = self.download_order.len() as isize - 1;
+        self.selected_download = (self.selected_download as isize + delta).clamp(0, last) as usize;
     }
 
     pub fn start_search(&mut self, append: bool) {
@@ -731,6 +801,25 @@ async fn build_and_execute_search(params: SearchParams) -> SearchOutcome {
     }
 }
 
+/// Slide `offset` so `selected` stays inside a window of `visible` rows.
+///
+/// The window does not move while the cursor is already on screen. It scrolls
+/// by just enough when the cursor crosses either edge, then clamps so a taller
+/// viewport cannot leave a gap after the last row.
+pub fn reveal(offset: &mut usize, selected: usize, len: usize, visible: usize) {
+    if len == 0 || visible == 0 {
+        *offset = 0;
+        return;
+    }
+    let selected = selected.min(len - 1);
+    if selected < *offset {
+        *offset = selected;
+    } else if selected >= (*offset).saturating_add(visible) {
+        *offset = selected.saturating_add(1).saturating_sub(visible);
+    }
+    *offset = (*offset).min(len.saturating_sub(visible));
+}
+
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
     let mut size = bytes as f64;
@@ -778,4 +867,44 @@ pub fn download_rate(downloaded: u64, started_at: Option<Instant>) -> Option<f64
         return None;
     }
     Some(downloaded as f64 / elapsed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reveal;
+
+    #[test]
+    fn reveal_keeps_offset_while_cursor_is_inside_the_window() {
+        let mut offset = 4;
+        reveal(&mut offset, 8, 30, 10);
+        assert_eq!(offset, 4);
+    }
+
+    #[test]
+    fn reveal_scrolls_when_cursor_passes_the_bottom() {
+        let mut offset = 0;
+        reveal(&mut offset, 10, 30, 10);
+        assert_eq!(offset, 1);
+    }
+
+    #[test]
+    fn reveal_scrolls_when_cursor_passes_the_top() {
+        let mut offset = 4;
+        reveal(&mut offset, 3, 30, 10);
+        assert_eq!(offset, 3);
+    }
+
+    #[test]
+    fn reveal_clamps_offset_when_the_viewport_grows() {
+        let mut offset = 20;
+        reveal(&mut offset, 22, 30, 25);
+        assert_eq!(offset, 5);
+    }
+
+    #[test]
+    fn reveal_resets_offset_for_an_empty_list() {
+        let mut offset = 4;
+        reveal(&mut offset, 0, 0, 10);
+        assert_eq!(offset, 0);
+    }
 }
