@@ -160,10 +160,22 @@ impl SearchQuery {
                     "cloud cover filter is not supported for Sentinel-1".into(),
                 ));
             }
-            let dtype = "OData.CSC.DoubleAttribute";
-            filters.push(format!(
-                "Attributes/{dtype}/any(att:att/Name eq 'cloudCover' and att/{dtype}/Value lt {max_clouds:.2})"
-            ));
+            // Sentinel-3 only exposes cloudCover for SLSTR (SL_*) products;
+            // OLCI, SRAL and SYN have no such attribute, so filtering on it
+            // would match nothing.
+            let supported = match self.satellite {
+                Satellite::Sentinel3 => self
+                    .product
+                    .as_deref()
+                    .is_some_and(|p| p.starts_with("SL_")),
+                _ => true,
+            };
+            if supported {
+                let dtype = "OData.CSC.DoubleAttribute";
+                filters.push(format!(
+                    "Attributes/{dtype}/any(att:att/Name eq 'cloudCover' and att/{dtype}/Value lt {max_clouds:.2})"
+                ));
+            }
         }
 
         // Geometry filter
@@ -324,6 +336,24 @@ mod tests {
     fn build_filter_cloud_on_sentinel1_fails() {
         let query = SearchQuery::new(Satellite::Sentinel1).max_cloud_cover(20.0);
         assert!(query.build_filter().is_err());
+    }
+
+    #[test]
+    fn build_filter_cloud_skipped_for_olci() {
+        let query = SearchQuery::new(Satellite::Sentinel3)
+            .product("OL_1_EFR")
+            .max_cloud_cover(100.0);
+        let filter = query.build_filter().unwrap();
+        assert!(!filter.contains("cloudCover"));
+    }
+
+    #[test]
+    fn build_filter_cloud_kept_for_slstr() {
+        let query = SearchQuery::new(Satellite::Sentinel3)
+            .product("SL_1_RBT")
+            .max_cloud_cover(100.0);
+        let filter = query.build_filter().unwrap();
+        assert!(filter.contains("cloudCover"));
     }
 
     #[test]
