@@ -95,6 +95,10 @@ fn handle_results(app: &mut App, code: KeyCode) {
     match code {
         KeyCode::Up | KeyCode::Char('k') => app.select_prev_result(),
         KeyCode::Down | KeyCode::Char('j') => app.select_next_result(),
+        KeyCode::PageUp => app.page_prev_result(),
+        KeyCode::PageDown => app.page_next_result(),
+        KeyCode::Home => app.select_first_result(),
+        KeyCode::End => app.select_last_result(),
         _ => {}
     }
 }
@@ -103,6 +107,10 @@ fn handle_downloads(app: &mut App, code: KeyCode) {
     match code {
         KeyCode::Up | KeyCode::Char('k') => app.select_prev_download(),
         KeyCode::Down | KeyCode::Char('j') => app.select_next_download(),
+        KeyCode::PageUp => app.page_prev_download(),
+        KeyCode::PageDown => app.page_next_download(),
+        KeyCode::Home => app.select_first_download(),
+        KeyCode::End => app.select_last_download(),
         _ => {}
     }
 }
