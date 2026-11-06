@@ -52,7 +52,8 @@ enum Commands {
         #[arg(long)]
         tile: Option<String>,
 
-        /// Maximum cloud cover percentage (0-100).
+        /// Maximum cloud cover percentage (0-100). Only applies to Sentinel-2
+        /// and Sentinel-3 SLSTR (SL_*) products; ignored for others.
         #[arg(short, long)]
         cloud: Option<f64>,
 
@@ -197,6 +198,15 @@ async fn run_search(
     max_results: u32,
 ) -> Result<(), copernicus_explorer::CopernicusError> {
     let mut query = SearchQuery::new(satellite);
+
+    if cloud.is_some()
+        && matches!(satellite, copernicus_explorer::Satellite::Sentinel3)
+        && !product.as_deref().is_some_and(|p| p.starts_with("SL_"))
+    {
+        eprintln!(
+            "warning: cloud cover filter ignored (only supported for Sentinel-2 and SLSTR products)"
+        );
+    }
 
     if let Some(p) = product {
         query = query.product(p);
