@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## Release 0.5.x
 
+### [0.5.2] - 2026-11-06
+
+#### Added
+
+- **Mouse pane navigation**: a left click focuses the Filters, Results, or
+  Downloads pane under the cursor. The mouse wheel moves the selection one row
+  in the Results or Downloads pane under the pointer. Mouse capture is turned
+  off when the TUI exits.
+
+#### Fixed
+
+- **TUI result scrolling**: a search that returned more products than fit in the
+  results pane drew every row from the top and clipped the rest, while the
+  selection kept moving through the full list. Rows past the frame could not be
+  seen or selected. The results and downloads lists now keep the highlighted
+  row on screen, with a scrollbar when the list overflows. `PgUp`/`PgDn` and
+  `Home`/`End` move by a page or jump to the ends.
+
 ### [0.5.1] - 2026-11-06
 
 #### Fixed
